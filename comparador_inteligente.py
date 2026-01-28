@@ -102,13 +102,13 @@ def comparar_con_inteligencia(ref_path, var_path):
             continue
         
     if resultados_acumulados:
-        nombre_archivo = f"reporte_{var_path.replace('.txt', '').replace('./output/spike_aligned/','')}.csv"
+        nombre_archivo = f"reporte_{var_path.replace('.txt', '').replace('output/s/spike_aligned/','')}.csv"
         guardar_reporte_csv(resultados_acumulados, nombre_archivo)
     else:
         print("\nNo se detectaron cambios entre las cepas.")
 
 def guardar_reporte_csv(resultados, nombre_archivo):
-    folder_path = "output/report"
+    folder_path = "output/s/report"
     ruta_completa = f"{folder_path}/{nombre_archivo}"
     try:
         os.makedirs(folder_path, exist_ok=True)

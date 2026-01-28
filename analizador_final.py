@@ -119,11 +119,11 @@ def generar_heatmap(df, score_total, linaje, csv_path):
 
     plt.tight_layout()
 
-    folder_path = "output/report"
+    folder_path = "output/s/report"
 
     try:
-        plt.savefig(f"{folder_path}/heatmap_{csv_path.replace('.csv', '').replace('./output/report/','')}.png")
-        print(f"🎨 Heatmap generado: '{folder_path}/heatmap_{csv_path.replace('.csv', '').replace('./output/report/','')}.png'")
+        plt.savefig(f"{folder_path}/heatmap_{csv_path.replace('.csv', '').replace('output/s/report/','')}.png")
+        print(f"🎨 Heatmap generado: '{folder_path}/heatmap_{csv_path.replace('.csv', '').replace('output/s/report/','')}.png'")
     except OSError as e:
         # Handle other potential errors like permission issues
         print(f"Error creating folder '{folder_path}': {e}")
@@ -134,7 +134,7 @@ def generar_informe_ejecutivo(df_biologico, score, linaje, calidad, archivo_sali
     # Identificar las 3 mutaciones más peligrosas
     top_amenazas = df_biologico.sort_values(by='Score', ascending=False).head(3)
     
-    with open(f"informe_ejecutivo_{archivo_salida.replace('.csv', '').replace('reporte_','').replace('./output/report/','')}.txt", "w") as f:
+    with open(f"informe_ejecutivo_{archivo_salida.replace('.csv', '').replace('reporte_','').replace('output/s/report/','')}.txt", "w") as f:
         f.write("==============================================\n")
         f.write("      INFORME DE INTELIGENCIA GENÓMICA\n")
         f.write("==============================================\n\n")
@@ -159,10 +159,10 @@ def generar_informe_ejecutivo(df_biologico, score, linaje, calidad, archivo_sali
         f.write("para garantizar la precisión del score funcional.\n\n")
         
         f.write("==============================================\n")
-        f.write("Generado por: BioAlerta MVP - Oráculo Genómico\n")
+        f.write(" Generado por: Telos-S - Analizador Genómico  \n")
         f.write("==============================================\n")
 
-    print(f"📄 Informe ejecutivo listo: informe_ejecutivo_{archivo_salida.replace('.csv', '').replace('reporte_','').replace('./output/report/','')}.txt")
+    print(f"📄 Informe ejecutivo listo: informe_ejecutivo_{archivo_salida.replace('.csv', '').replace('reporte_','').replace('output/s/report/','')}.txt")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

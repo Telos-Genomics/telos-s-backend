@@ -72,7 +72,7 @@ def procesar_referencia(archivo_fasta):
     print(f"    Posicion encontrada: {start_pos} a {start_pos + end_pos_relative}")
     print(f"    Longitud proteina: {len(proteina_s)} aa")
 
-    folder_path = "output/spike"
+    folder_path = "output/s/spike"
     nombre_archivo = f"{folder_path}/spike_{archivo_fasta.replace('.fasta', '').replace('./','')}.txt"
 
     # Guardamos la proteina para futuros analisis de IA (ESM-2)
