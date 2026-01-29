@@ -20,5 +20,12 @@ echo "----------------------------------------------------------"
 echo "🧬 Extrayendo secuencia Spike..."
 python3 oraculo_mutaciones.py "$REF_GENOMA"
 
+# El nombre del CSV generado por tu script depende de la ruta del var_path
+REPORT_CSV="output/s/report/reporte_${REF_NAME}.csv"
+
+# 5. Paso 4: Análisis Final y Visualización
+echo "📊 [4/4] Generando reporte ejecutivo y heatmap..."
+python3 analizador_final.py "$REPORT_CSV"
+
 echo "----------------------------------------------------------"
 echo "✅ Análisis completado con éxito."

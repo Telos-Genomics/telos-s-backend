@@ -25,8 +25,8 @@ def alinear_sincronizar(ref_path, var_path):
     var_aligned = mejor_alineamiento[1]
 
     folder_path = "output/s/spike_aligned"
-    nombre_ref_final = f"{folder_path}/{ref_path.replace('.txt', '').replace('output/s/spike/','')}_final.txt"
-    nombre_var_final = f"{folder_path}/{var_path.replace('.txt', '').replace('output/s/spike/','')}_final.txt"
+    nombre_ref_final = f"{folder_path}/{ref_path.replace('.txt', '').replace('output/s/spike/','')}.txt"
+    nombre_var_final = f"{folder_path}/{var_path.replace('.txt', '').replace('output/s/spike/','')}.txt"
 
     try:
         os.makedirs(folder_path, exist_ok=True)

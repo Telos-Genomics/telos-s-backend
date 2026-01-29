@@ -32,15 +32,15 @@ echo "📏 [2/4] Alineando secuencias (Sincronización)..."
 python3 alineador_secuencias.py "$SPIKE_REF" "$SPIKE_VAR"
 
 # Definir rutas de salida del paso 2
-ALIGNED_REF="output/s/spike_aligned/spike_${REF_NAME}_final.txt"
-ALIGNED_VAR="output/s/spike_aligned/spike_${VAR_NAME}_final.txt"
+ALIGNED_REF="output/s/spike_aligned/spike_${REF_NAME}.txt"
+ALIGNED_VAR="output/s/spike_aligned/spike_${VAR_NAME}.txt"
 
 # 4. Paso 3: Comparación Inteligente (ESM-2)
 echo "🧠 [3/4] Ejecutando análisis de IA con ESM-2..."
 python3 comparador_inteligente.py "$ALIGNED_REF" "$ALIGNED_VAR"
 
 # El nombre del CSV generado por tu script depende de la ruta del var_path
-REPORT_CSV="output/s/report/reporte_spike_${VAR_NAME}_final.csv"
+REPORT_CSV="output/s/report/reporte_spike_${VAR_NAME}.csv"
 
 # 5. Paso 4: Análisis Final y Visualización
 echo "📊 [4/4] Generando reporte ejecutivo y heatmap..."
@@ -48,5 +48,5 @@ python3 analizador_final.py "$REPORT_CSV"
 
 echo "----------------------------------------------------------"
 echo "✅ Análisis completado con éxito."
-echo "Reporte: informe_ejecutivo_spike_${VAR_NAME}_final.txt"
-echo "Heatmap: output/s/report/heatmap_spike_${VAR_NAME}_final.png"
+echo "Reporte: informe_ejecutivo_spike_${VAR_NAME}.txt"
+echo "Heatmap: output/s/report/heatmap_spike_${VAR_NAME}.png"

@@ -128,6 +128,6 @@ def guardar_reporte_csv(resultados, nombre_archivo):
 
 if __name__ == "__main__":
     if len(sys.argv) < 3:
-        print("Uso: python3 comparador_inteligente.py spike_wuhan_final.txt spike_variante_final.txt")
+        print("Uso: python3 comparador_inteligente.py ./output/s/spike_aligned/spike_wuhan.txt ./output/s/spike_aligned/spike_variante.txt")
     else:
         comparar_con_inteligencia(sys.argv[1], sys.argv[2])
