@@ -7,7 +7,7 @@ if [ [ $# -lt 1 ] ]; then
     exit 1
 fi
 
-# 1. Configuración de variables
+# Configuración de variables
 VAR_GENOMA=$1
 REF_GENOMA=${2:-"wuhan_ref.fasta"} # Usa wuhan_ref.fasta si no se especifica otro
 
@@ -18,8 +18,8 @@ REF_NAME=$(basename "$REF_GENOMA" .fasta)
 echo "🚀 Iniciando Pipeline de Análisis BioAlerta para: $VAR_NAME"
 echo "----------------------------------------------------------"
 
-# 2. Paso 1: Extracción de la proteína Spike
-echo "🧬 [1/4] Extrayendo secuencia Spike..."
+# Paso 1: Extracción de la proteína Spike
+echo "🧬 [1/6] Extrayendo secuencia Spike..."
 python3 extraer_spike.py "$REF_GENOMA"
 python3 extraer_spike.py "$VAR_GENOMA"
 
@@ -27,23 +27,33 @@ python3 extraer_spike.py "$VAR_GENOMA"
 SPIKE_REF="output/s/spike/spike_${REF_NAME}.txt"
 SPIKE_VAR="output/s/spike/spike_${VAR_NAME}.txt"
 
-# 3. Paso 2: Alineamiento de secuencias
-echo "📏 [2/4] Alineando secuencias (Sincronización)..."
+# Paso 2: Alineamiento de secuencias
+echo "📏 [2/6] Alineando secuencias (Sincronización)..."
 python3 alineador_secuencias.py "$SPIKE_REF" "$SPIKE_VAR"
 
 # Definir rutas de salida del paso 2
 ALIGNED_REF="output/s/spike_aligned/spike_${REF_NAME}.txt"
 ALIGNED_VAR="output/s/spike_aligned/spike_${VAR_NAME}.txt"
 
-# 4. Paso 3: Comparación Inteligente (ESM-2)
-echo "🧠 [3/4] Ejecutando análisis de IA con ESM-2..."
-python3 comparador_inteligente.py "$ALIGNED_REF" "$ALIGNED_VAR"
+# Paso 3: Comparación Inteligente (ESM-2)
+echo "[3/6] Imputando secuencias dañadas"
+python3 imputar_secuencia.py "$ALIGNED_VAR" "$ALIGNED_REF"
+
+INDICTED_JSON="output/prophet/imputacion_spike_${VAR_NAME}.json"
+
+# Paso 4: Obteniendo mutaciones en las posiciones criticas
+echo "[4/6] Obteniendo mutaciones posibles en 452, 484, 501 y 681..."
+python3 oraculo_mutaciones.py "$ALIGNED_VAR" "$INDICTED_JSON" --cpu
+
+# Paso 5: Comparación Inteligente (ESM-2)
+echo "🧠 [5/6] Ejecutando análisis de IA con ESM-2..."
+python3 comparador_inteligente.py "$ALIGNED_REF" "$ALIGNED_VAR" --cpu
 
 # El nombre del CSV generado por tu script depende de la ruta del var_path
 REPORT_CSV="output/s/report/reporte_spike_${VAR_NAME}.csv"
 
-# 5. Paso 4: Análisis Final y Visualización
-echo "📊 [4/4] Generando reporte ejecutivo y heatmap..."
+# Paso 6: Análisis Final y Visualización
+echo "📊 [6/6] Generando reporte ejecutivo y heatmap..."
 python3 analizador_final.py "$REPORT_CSV"
 
 echo "----------------------------------------------------------"

@@ -18,7 +18,7 @@ echo "----------------------------------------------------------"
 
 # 2. Paso 1: Extracción de la proteína Spike
 echo "🧬 Extrayendo secuencia Spike..."
-python3 oraculo_mutaciones.py "$REF_GENOMA"
+python3 oraculo_mutaciones.py "$REF_GENOMA" --cpu
 
 # El nombre del CSV generado por tu script depende de la ruta del var_path
 REPORT_CSV="output/s/report/reporte_${REF_NAME}.csv"
