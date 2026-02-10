@@ -98,10 +98,7 @@ def procesar_referencia(archivo_fasta):
         print(f"    - Archivo incorrecto")
         print(f"{'='*60}\n")
         
-        respuesta = input("¿Continuar de todas formas? (s/N): ").strip().lower()
-        if respuesta not in ['s', 'si', 'sí', 'y', 'yes']:
-            print("Operación cancelada")
-            return None
+        return None
     
     if es_genoma_completo:
         print(f"✓ Detectado: Genoma completo")
