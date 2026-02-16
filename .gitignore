@@ -29,7 +29,6 @@ data/raw/
 *.fna
 *.fastq
 *.gb
-*.txt
 
 # --- Resultados y Reportes ---
 # Es mejor que cada usuario genere sus propios reportes

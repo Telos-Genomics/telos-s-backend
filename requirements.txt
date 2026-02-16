@@ -1,0 +1,18 @@
+# Core IA
+torch
+transformers
+numpy
+pandas
+
+# Bioinformática
+biopython
+scikit-learn
+
+# API y Servidor
+fastapi
+uvicorn
+python-multipart
+pydantic
+
+# Visualización (Opcional para el backend)
+matplotlib
