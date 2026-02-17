@@ -678,10 +678,13 @@ def generar_informe_pdf(df_confiable, df_sospechosa, df_invalida,
         ["AGGRESSION SCORE", f"{score:.1f}"],
         ["VEREDICTO", "MONITOREO ACTIVO" if score > 600 else "OBSERVACIÓN"],
         ["LINAJE PROBABLE", f"{linaje} ({prob_linaje:.1f}%)"],
-        ["CALIDAD SECUENCIACIÓN", f"{calidad:.2f}%"]
+        ["CALIDAD SECUENCIACIÓN", f"{calidad:.2f}%"],
+        ["MUTACIONES CONFIABLES", f"{len(df_confiable)}"],
+        ["MUTACIONES SOSPECHOSAS", f"{len(df_sospechosa)} (dentro de ±{VENTANA_CONTEXTO} residuos de un X)"],
+        ["MUTACIONES INVALIDAS", f"{len(df_invalida)} (contienen X directamente)"]
     ]
     
-    t = Table(resumen_data, colWidths=[2*inch, 3*inch])
+    t = Table(resumen_data, colWidths=[3*inch, 3*inch])
     t.setStyle(TableStyle([
         ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
         ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
