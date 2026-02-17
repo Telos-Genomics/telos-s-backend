@@ -16,3 +16,4 @@ pydantic
 
 # Visualización (Opcional para el backend)
 matplotlib
+reportlab
