@@ -8,6 +8,11 @@ import matplotlib.pyplot as plt
 import numpy as np
 import json
 from matplotlib.lines import Line2D
+from reportlab.lib.pagesizes import A4
+from reportlab.lib import colors
+from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, HRFlowable
+from reportlab.lib.units import inch
 
 # ---------------------------------------------------------------------------
 # SISTEMA DE CONFIABILIDAD
@@ -279,7 +284,11 @@ def analizar_cepa(csv_path):
     generar_heatmap(df_confiable, df_sospechosa, posiciones_x,
                     aggression_score, prediccion_linaje, csv_path, datos_prophet)
 
-    generar_informe_ejecutivo(df_confiable, df_sospechosa, df_invalida,
+    generar_informe_txt(df_confiable, df_sospechosa, df_invalida,
+                              aggression_score, prediccion_linaje, max_coincidencia, calidad,
+                              csv_path, datos_prophet)
+
+    generar_informe_pdf(df_confiable, df_sospechosa, df_invalida,
                               aggression_score, prediccion_linaje, max_coincidencia, calidad,
                               csv_path, datos_prophet)
 
@@ -478,8 +487,7 @@ def generar_heatmap(df_confiable, df_sospechosa, posiciones_x,
     finally:
         plt.close(fig)
 
-
-def generar_informe_ejecutivo(df_confiable, df_sospechosa, df_invalida,
+def generar_informe_txt(df_confiable, df_sospechosa, df_invalida,
                               score, linaje, prob_linaje, calidad, csv_path, datos_prophet):
     """Genera el informe .txt con secciones diferenciadas por confiabilidad."""
 
@@ -640,6 +648,128 @@ def generar_informe_ejecutivo(df_confiable, df_sospechosa, df_invalida,
 
     print(f"📄 Informe ejecutivo: {ruta_informe}")
 
+def generar_informe_pdf(df_confiable, df_sospechosa, df_invalida,
+                              score, linaje, prob_linaje, calidad, csv_path, datos_prophet):
+    
+    # --- Configuración de Archivo ---
+    nombre_base = Path(csv_path).name.replace('.csv', '').replace('reporte_', '')
+    ruta_pdf = f"output/s/report/informe_ejecutivo_{nombre_base}.pdf"
+    doc = SimpleDocTemplate(ruta_pdf, pagesize=A4, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
+    
+    styles = getSampleStyleSheet()
+    elements = []
+
+    # --- Estilos Personalizados ---
+    style_title = ParagraphStyle('Title', parent=styles['Heading1'], fontSize=18, spaceAfter=10, textColor=colors.HexColor("#1A237E"))
+    style_header = ParagraphStyle('SubTitle', parent=styles['Heading2'], fontSize=12, spaceAfter=5, textColor=colors.grey)
+    style_body = styles["BodyText"]
+    style_warning = ParagraphStyle('Warning', parent=style_body, textColor=colors.red, fontSize=9)
+
+    # --- 1. Encabezado ---
+    elements.append(Paragraph("INFORME DE INTELIGENCIA GENÓMICA", style_title))
+    elements.append(Paragraph(f"Telos-S Analysis Platform | ID: {nombre_base}", style_header))
+    elements.append(HRFlowable(width="100%", thickness=1, color=colors.black, spaceAfter=20))
+
+    # --- 2. Cuadro de Resumen (Veredicto) ---
+    veredicto_color = colors.orange if score > 600 else colors.green
+    if score > 1200: veredicto_color = colors.red
+
+    resumen_data = [
+        ["AGGRESSION SCORE", f"{score:.1f}"],
+        ["VEREDICTO", "MONITOREO ACTIVO" if score > 600 else "OBSERVACIÓN"],
+        ["LINAJE PROBABLE", f"{linaje} ({prob_linaje:.1f}%)"],
+        ["CALIDAD SECUENCIACIÓN", f"{calidad:.2f}%"],
+        ["MUTACIONES CONFIABLES", f"{len(df_confiable)}"],
+        ["MUTACIONES SOSPECHOSAS", f"{len(df_sospechosa)} (dentro de ±{VENTANA_CONTEXTO} residuos de un X)"],
+        ["MUTACIONES INVALIDAS", f"{len(df_invalida)} (contienen X directamente)"]
+    ]
+    
+    t = Table(resumen_data, colWidths=[3*inch, 3*inch])
+    t.setStyle(TableStyle([
+        ('BACKGROUND', (0,0), (0,-1), colors.whitesmoke),
+        ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+        ('FONTNAME', (0,0), (-1,-1), 'Helvetica-Bold'),
+        ('PADDING', (0,0), (-1,-1), 8),
+    ]))
+    elements.append(t)
+    elements.append(Spacer(1, 20))
+
+    # 1. Lógica de colores (usando tonos más profesionales)
+    if score > 1200:
+        veredicto = "🔴 ALERTA MÁXIMA"
+        nivel_riesgo = "CRÍTICO"
+        color_dinamico = colors.HexColor("#D32F2F") # Rojo Profundo
+    elif score > 600:
+        veredicto = "🟠 MONITOREO ACTIVO"
+        nivel_riesgo = "ALTO"
+        color_dinamico = colors.HexColor("#F57C00") # Naranja Intenso
+    else:
+        veredicto = "🟡 OBSERVACIÓN"
+        nivel_riesgo = "MODERADO"
+        color_dinamico = colors.HexColor("#388E3C") # Verde Bosque
+
+    # 2. Crear un estilo ÚNICO para el riesgo
+    # Importante: El nombre 'RiskLevelStyle' no debe repetirse en el script
+    style_riesgo = ParagraphStyle(
+        'RiskLevelStyle', 
+        parent=styles['Heading4'], 
+        textColor=color_dinamico,
+        fontSize=11,
+        spaceBefore=10
+    )
+
+    # 3. Construir la sección
+    elements.append(Paragraph("ANÁLISIS DE RIESGO", styles['Heading3']))
+    
+    # Bullet point con el color dinámico
+    txt_riesgo = f"• <b>Nivel de riesgo: {nivel_riesgo}</b>"
+    elements.append(Paragraph(txt_riesgo, style_riesgo))
+    
+    # Descripción en estilo normal
+    elements.append(Paragraph(
+        "Se observa una acumulación de mutaciones en el RBD/RBM, lo que sugiere capacidad de escape inmunológico.", 
+        styles["Normal"]
+    ))
+
+    # --- 3. Top Mutaciones (Tabla Limpia) ---
+    elements.append(Paragraph("TOP 3 MUTACIONES CRÍTICAS", styles['Heading3']))
+    if not df_confiable.empty:
+        top_3 = df_confiable.sort_values(by='Score', ascending=False).head(3)
+        data_mut = [["Mutación", "Zona", "Score"]]
+        for _, r in top_3.iterrows():
+            data_mut.append([r['Mutacion'], r['Zona'], f"{r['Score']:.1f}"])
+        
+        tm = Table(data_mut, colWidths=[1.5*inch, 2.5*inch, 1*inch])
+        tm.setStyle(TableStyle([
+            ('BACKGROUND', (0,0), (-1,0), colors.HexColor("#E3F2FD")),
+            ('GRID', (0,0), (-1,-1), 0.5, colors.grey),
+            ('ALIGN', (2,0), (2,-1), 'CENTER'),
+        ]))
+        elements.append(tm)
+
+    # --- 4. Prophet Section (Alertas Visuales) ---
+    elements.append(Paragraph("PRONÓSTICO DE EVOLUCIÓN (TELOS PROPHET)", styles['Heading3']))
+    for target in (datos_prophet or []):
+        mejor = next((p for p in target['predictions'] if p['amino'] != target['original']), None)
+        color_alert = "#D32F2F" if mejor and mejor['confidence'] > 20 else "#2E7D32"
+        
+        txt = f"<b>{target['target']}</b>: "
+        if mejor:
+            txt += f"Posible ruta hacia <b>{mejor['amino']}</b> ({mejor['confidence']:.1f}% prob. estructural)."
+        else:
+            txt += "Estructura estable."
+        
+        p_style = ParagraphStyle('Prophet', parent=style_body, leftIndent=10, textColor=colors.HexColor(color_alert))
+        elements.append(Paragraph(f"• {txt}", p_style))
+
+    # --- 5. Metodología (Pie de página) ---
+    elements.append(Spacer(1, 40))
+    elements.append(HRFlowable(width="100%", thickness=0.5, color=colors.grey))
+    elements.append(Paragraph("Metodología: El score se calcula sobre mutaciones CONFIABLES (fuera de zona de exclusión ±5 de residuo X).", styles['Italic']))
+
+    # Construir PDF
+    doc.build(elements)
+    print(f"📄 PDF Generado: {ruta_pdf}")
 
 if __name__ == "__main__":
     if len(sys.argv) < 2:

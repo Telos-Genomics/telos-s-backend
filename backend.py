@@ -450,7 +450,8 @@ def run_analysis_pipeline(
         base_url = "http://localhost:8000" # Esto puede venir de un .env
         heatmap_rel_path = f"/output/s/report/heatmap_spike_{variant_name}.svg"
         reportcsv_rel_path = f"/output/s/report/reporte_spike_{variant_name}.csv"
-        informe_rel_path = f"/output/s/report/informe_ejecutivo_spike_{variant_name}.txt"
+        informe_txt_rel_path = f"/output/s/report/informe_ejecutivo_spike_{variant_name}.txt"
+        informe_pdf_rel_path = f"/output/s/report/informe_ejecutivo_spike_{variant_name}.pdf"
         
         # Construir respuesta final
         results = {
@@ -464,7 +465,8 @@ def run_analysis_pipeline(
             "files": {
                 "csv": f"{base_url}{reportcsv_rel_path}",
                 "heatmap": f"{base_url}{heatmap_rel_path}",
-                "informe": f"{base_url}{informe_rel_path}"
+                "informe_txt": f"{base_url}{informe_txt_rel_path}",
+                "informe_pdf": f"{base_url}{informe_pdf_rel_path}"
             }
         }
         
@@ -491,7 +493,7 @@ async def root():
     """Endpoint raíz con información de la API"""
     return {
         "api": "Telos-S",
-        "version": "0.1.0-mvp",
+        "version": "0.3.1-mvp",
         "status": "operational",
         "docs": "/docs",
         "endpoints": {
