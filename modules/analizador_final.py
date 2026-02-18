@@ -749,18 +749,34 @@ def generar_informe_pdf(df_confiable, df_sospechosa, df_invalida,
 
     # --- 4. Prophet Section (Alertas Visuales) ---
     elements.append(Paragraph("PRONÓSTICO DE EVOLUCIÓN (TELOS PROPHET)", styles['Heading3']))
-    for target in (datos_prophet or []):
-        mejor = next((p for p in target['predictions'] if p['amino'] != target['original']), None)
-        color_alert = "#D32F2F" if mejor and mejor['confidence'] > 20 else "#2E7D32"
+
+    if datos_prophet:
+        posiciones_confiables = set(df_confiable['Pos'].dropna().astype(int).tolist())
+
+        for target in (datos_prophet or []):
+            # Verificar si la posición es confiable
+            pos = target['detected_position']
+            es_confiable = pos in posiciones_confiables
+
+            if es_confiable:
+
+                mejor = next((p for p in target['predictions'] if p['amino'] != target['original']), None)
+                color_alert = "#D32F2F" if mejor and mejor['confidence'] > 20 else "#2E7D32"
         
-        txt = f"<b>{target['target']}</b>: "
-        if mejor:
-            txt += f"Posible ruta hacia <b>{mejor['amino']}</b> ({mejor['confidence']:.1f}% prob. estructural)."
-        else:
-            txt += "Estructura estable."
+                txt = f"<b>{target['target']}</b>: "
+                if mejor:
+                    txt += f"Posible ruta hacia <b>{mejor['amino']}</b> ({mejor['confidence']:.1f}% prob. estructural)."
+                else:
+                    txt += "Estructura estable."
         
-        p_style = ParagraphStyle('Prophet', parent=style_body, leftIndent=10, textColor=colors.HexColor(color_alert))
-        elements.append(Paragraph(f"• {txt}", p_style))
+                p_style = ParagraphStyle('Prophet', parent=style_body, leftIndent=10, textColor=colors.HexColor(color_alert))
+                elements.append(Paragraph(f"• {txt}", p_style))
+
+            else:
+                txt = f"<b>{target['target']}</b>: EXCLUIDO — posición dentro de zona de exclusión por X. No se puede emitir predicción fiable."
+                
+                p_style = ParagraphStyle('Prophet', parent=style_body, leftIndent=10, textColor=colors.HexColor('#000000'))
+                elements.append(Paragraph(f"• {txt}", p_style))
 
     # --- 5. Metodología (Pie de página) ---
     elements.append(Spacer(1, 40))
