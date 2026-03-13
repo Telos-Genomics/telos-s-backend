@@ -775,7 +775,7 @@ def generar_informe_pdf(df_confiable, df_sospechosa, df_invalida,
             else:
                 txt = f"<b>{target['target']}</b>: EXCLUIDO — posición dentro de zona de exclusión por X. No se puede emitir predicción fiable."
                 
-                p_style = ParagraphStyle('Prophet', parent=style_body, leftIndent=10, textColor=colors.HexColor('#000000'))
+                p_style = ParagraphStyle('Prophet', parent=style_body, leftIndent=10, textColor=colors.HexColor('#757575'))
                 elements.append(Paragraph(f"• {txt}", p_style))
 
     # --- 5. Metodología (Pie de página) ---
