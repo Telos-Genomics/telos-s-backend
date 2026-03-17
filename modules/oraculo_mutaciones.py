@@ -123,7 +123,7 @@ def predecir_mutaciones(spike_path, ruta_json_imputacion, forzar_cpu=False):
     # ---------------------------------------------------------------------------
     # 2. Cargar modelo
     # ---------------------------------------------------------------------------
-    model_name = "facebook/esm2_t33_650M_UR50D"
+    model_name = os.environ['ESM_2_SIZE']
     print(f"\n📥 Cargando modelo {model_name}...")
     
     tokenizer = EsmTokenizer.from_pretrained(model_name)

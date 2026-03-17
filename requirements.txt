@@ -13,6 +13,7 @@ fastapi
 uvicorn
 python-multipart
 pydantic
+python-dotenv
 
 # Visualización (Opcional para el backend)
 matplotlib

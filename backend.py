@@ -2,14 +2,14 @@
 Telos-S API
 -----------
 API REST para análisis de variantes SARS-CoV-2 con predicción de impacto epidemiológico.
-
+ 
 Arquitectura:
     - FastAPI backend
     - Procesamiento asíncrono de análisis largos
     - Almacenamiento de resultados en JSON
     - Ready para conectar con frontend de simulación
 """
-
+ 
 from fastapi import FastAPI, UploadFile, File, HTTPException, BackgroundTasks, Query
 from fastapi.responses import JSONResponse, FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -23,11 +23,11 @@ import uuid
 import shutil
 from datetime import datetime
 import os
-
+ 
 # ============================================================================
 # CONFIGURACIÓN
 # ============================================================================
-
+ 
 app = FastAPI(
     title="Telos-S API",
     description="Análisis genómico de variantes SARS-CoV-2 con predicción epidemiológica",
@@ -35,7 +35,7 @@ app = FastAPI(
     docs_url="/docs",
     redoc_url="/redoc"
 )
-
+ 
 # CORS para permitir requests desde frontend
 app.add_middleware(
     CORSMiddleware,
@@ -44,21 +44,21 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
+ 
 # Directorios
 BASE_DIR = Path(__file__).parent
 OUTPUT_DIR = BASE_DIR / "output"
 UPLOAD_DIR = OUTPUT_DIR / "uploads"
 JOBS_DIR = OUTPUT_DIR / "jobs"
-
+ 
 # Crear directorios si no existen
 for directory in [UPLOAD_DIR, JOBS_DIR]:
     directory.mkdir(exist_ok=True)
-
+ 
 # ============================================================================
 # MODELOS DE DATOS (Pydantic)
 # ============================================================================
-
+ 
 class AnalysisRequest(BaseModel):
     """Request para iniciar análisis de variante"""
     variant_name: Optional[str] = Field(None, description="Nombre de la variante (opcional)")
@@ -73,8 +73,8 @@ class AnalysisRequest(BaseModel):
                 "impute_gaps": True
             }
         }
-
-
+ 
+ 
 class AnalysisStatus(BaseModel):
     """Estado de un análisis en progreso"""
     job_id: str
@@ -84,8 +84,8 @@ class AnalysisStatus(BaseModel):
     started_at: datetime
     completed_at: Optional[datetime] = None
     error: Optional[str] = None
-
-
+ 
+ 
 class VariantMutation(BaseModel):
     """Mutación individual en la proteína Spike"""
     mutation: str
@@ -94,8 +94,8 @@ class VariantMutation(BaseModel):
     llr: float
     score: float
     confidence: str  # CONFIABLE, SOSPECHOSA, IMPUTADA, INVALIDA
-
-
+ 
+ 
 class AnalysisResults(BaseModel):
     """Resultados completos del análisis"""
     job_id: str
@@ -116,8 +116,8 @@ class AnalysisResults(BaseModel):
     # Metadata
     processed_at: datetime
     files: Dict[str, str]  # Rutas a archivos generados
-
-
+ 
+ 
 class SimulationRequest(BaseModel):
     """Request para ejecutar simulación epidemiológica"""
     job_id: str = Field(..., description="ID del análisis de variante")
@@ -136,24 +136,24 @@ class SimulationRequest(BaseModel):
                 "initial_cases": 1
             }
         }
-
-
+ 
+ 
 # ============================================================================
 # UTILIDADES
 # ============================================================================
-
+ 
 def create_job_id() -> str:
     """Genera ID único para el job"""
     return f"job_{uuid.uuid4().hex[:12]}"
-
-
+ 
+ 
 def save_job_status(job_id: str, status_data: dict):
     """Guarda estado del job en JSON"""
     job_file = JOBS_DIR / f"{job_id}.json"
     with open(job_file, "w") as f:
         json.dump(status_data, f, indent=2, default=str)
-
-
+ 
+ 
 def load_job_status(job_id: str) -> dict:
     """Carga estado del job desde JSON"""
     job_file = JOBS_DIR / f"{job_id}.json"
@@ -162,8 +162,8 @@ def load_job_status(job_id: str) -> dict:
     
     with open(job_file, "r") as f:
         return json.load(f)
-
-
+ 
+ 
 def run_pipeline_step(command: List[str], step_name: str) -> dict:
     """
     Ejecuta un paso del pipeline y captura output.
@@ -201,8 +201,8 @@ def run_pipeline_step(command: List[str], step_name: str) -> dict:
             "stderr": str(e),
             "returncode": -1
         }
-
-
+ 
+ 
 def calculate_epi_parameters(results_csv: Path) -> dict:
     """
     Calcula parámetros epidemiológicos a partir del CSV de mutaciones.
@@ -277,12 +277,12 @@ def calculate_epi_parameters(results_csv: Path) -> dict:
             "infectious_period_days": 10.0,
             "error": str(e)
         }
-
-
+ 
+ 
 # ============================================================================
 # BACKGROUND TASK: Pipeline Completo
 # ============================================================================
-
+ 
 def run_analysis_pipeline(
     job_id: str,
     variant_fasta_path: Path,
@@ -444,10 +444,10 @@ def run_analysis_pipeline(
                         parts = line.split("PROBABILIDAD DE LINAJE:")
                         if len(parts) > 1:
                             lineage_conf = parts[1].strip()
-
-
+ 
+ 
         # Dentro de la lógica que construye el JSON final
-        base_url = "http://localhost:8000" # Esto puede venir de un .env
+        base_url = os.getenv("PUBLIC_URL", f"http://localhost:{os.environ['API_PORT']}") # Esto puede venir de un .env
         heatmap_rel_path = f"/output/s/report/heatmap_spike_{variant_name}.svg"
         reportcsv_rel_path = f"/output/s/report/reporte_spike_{variant_name}.csv"
         informe_txt_rel_path = f"/output/s/report/informe_ejecutivo_spike_{variant_name}.txt"
@@ -459,6 +459,12 @@ def run_analysis_pipeline(
             "variant_name": variant_name,
             "lineage": lineage,
             "lineage_confidence": lineage_conf,
+            # Promovido a raíz para acceso directo — también existe en epi_params
+            "aggression_score": epi_params.get("aggression_score", 0.0),
+            "sequence_quality": round(
+                (1 - df_results[df_results["Confiabilidad"] == "INVALIDA"].shape[0]
+                 / max(df_results.shape[0], 1)) * 100, 1
+            ),
             "mutations": df_results.to_dict(orient="records"),
             "epi_params": epi_params,
             "processed_at": datetime.now().isoformat(),
@@ -482,12 +488,12 @@ def run_analysis_pipeline(
         status["error"] = str(e)
         status["completed_at"] = datetime.now().isoformat()
         save_job_status(job_id, status)
-
-
+ 
+ 
 # ============================================================================
 # ENDPOINTS
 # ============================================================================
-
+ 
 @app.get("/")
 async def root():
     """Endpoint raíz con información de la API"""
@@ -501,10 +507,10 @@ async def root():
             "simulation": "/api/v1/simulation"
         }
     }
-
+ 
 # Montar la carpeta de salida para acceso público vía URL
 app.mount("/output", StaticFiles(directory=str(OUTPUT_DIR)), name="output")
-
+ 
 @app.get("/health")
 async def health_check():
     """Health check para monitoring"""
@@ -512,8 +518,8 @@ async def health_check():
         "status": "healthy",
         "timestamp": datetime.now().isoformat()
     }
-
-
+ 
+ 
 @app.post("/api/v1/analysis/upload", status_code=202)
 async def upload_and_analyze(
     background_tasks: BackgroundTasks,
@@ -567,8 +573,8 @@ async def upload_and_analyze(
         "message": "Análisis iniciado. Usa GET /api/v1/analysis/{job_id} para consultar el estado.",
         "estimated_time_minutes": 5
     }
-
-
+ 
+ 
 @app.get("/api/v1/analysis/{job_id}")
 async def get_analysis_status(job_id: str):
     """
@@ -578,8 +584,8 @@ async def get_analysis_status(job_id: str):
     """
     status = load_job_status(job_id)
     return status
-
-
+ 
+ 
 @app.get("/api/v1/analysis/{job_id}/results")
 async def get_analysis_results(job_id: str):
     """
@@ -600,8 +606,8 @@ async def get_analysis_results(job_id: str):
         )
     
     return status["results"]
-
-
+ 
+ 
 @app.post("/api/v1/simulation/run")
 async def run_simulation(request: SimulationRequest):
     """
@@ -628,7 +634,7 @@ async def run_simulation(request: SimulationRequest):
         "status": "completed",
         "variant": {
             "name": results.get("variant_name", "Unknown"),
-            "aggression_score": results.get("aggression_score", 0),
+            "aggression_score": results.get("aggression_score") or results.get("epi_params", {}).get("aggression_score", 0),
             "lineage": results.get("lineage", "Unknown")
         },
         "scenario": request.scenario,
@@ -637,18 +643,18 @@ async def run_simulation(request: SimulationRequest):
         "epi_params": epi_params,
         "message": "Simulación completa se implementará en Fase 2. Parámetros disponibles para visualización."
     }
-
-
+ 
+ 
 # ============================================================================
 # MAIN
 # ============================================================================
-
+ 
 if __name__ == "__main__":
     import uvicorn
     
     uvicorn.run(
         "backend:app",
-        host="0.0.0.0",
-        port=8000,
+        host=os.environ['API_HOST'],
+        port=int(os.environ['API_PORT']),
         reload=True  # Auto-reload durante desarrollo
     )
