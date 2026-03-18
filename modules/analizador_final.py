@@ -676,7 +676,7 @@ def generar_informe_pdf(df_confiable, df_sospechosa, df_invalida,
 
     resumen_data = [
         ["AGGRESSION SCORE", f"{score:.1f}"],
-        ["VEREDICTO", "MONITOREO ACTIVO" if score > 600 else "OBSERVACIÓN"],
+        ["VEREDICTO", "ALERTA MÁXIMA" if score > 1200 else ("MONITOREO ACTIVO" if score > 600 else "OBSERVACIÓN") ],
         ["LINAJE PROBABLE", f"{linaje} ({prob_linaje:.1f}%)"],
         ["CALIDAD SECUENCIACIÓN", f"{calidad:.2f}%"],
         ["MUTACIONES CONFIABLES", f"{len(df_confiable)}"],

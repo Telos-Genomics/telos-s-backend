@@ -456,7 +456,7 @@ def run_analysis_pipeline(
         # Construir respuesta final
         results = {
             "job_id": job_id,
-            "variant_name": variant_name,
+            "variant_name": variant_name.split("_", 3)[-1],
             "lineage": lineage,
             "lineage_confidence": lineage_conf,
             # Promovido a raíz para acceso directo — también existe en epi_params
@@ -539,7 +539,8 @@ async def upload_and_analyze(
     job_id = create_job_id()
     
     # Guardar archivos subidos
-    variant_path = UPLOAD_DIR / f"{job_id}_variant.fasta"
+    original_name = Path(variant_file.filename).stem
+    variant_path = UPLOAD_DIR / f"{job_id}_{original_name}.fasta"
     
     with open(variant_path, "wb") as f:
         shutil.copyfileobj(variant_file.file, f)
