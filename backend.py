@@ -177,7 +177,7 @@ def run_pipeline_step(command: List[str], step_name: str) -> dict:
             cwd=BASE_DIR,
             capture_output=True,
             text=True,
-            timeout=600  # 10 minutos max por paso
+            timeout=1200  # 10 minutos max por paso
         )
         
         return {
