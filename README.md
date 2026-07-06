@@ -269,12 +269,3 @@ The percentage indicates what fraction of the lineage signatures are present:
 - Science 379.6637 (2023): 1123-1130
 
 ---
-
-## 📝 Licencia
-
-Intellectual Property of Telos Genomics. Distribution without authorization is prohibited.
-
----
-
-**Developed by**: Telos Genomics
-**Last updated**: February 2026
