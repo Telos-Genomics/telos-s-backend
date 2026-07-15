@@ -1,0 +1,41 @@
+cff-version: 1.2.0
+message: "If you use this software, please cite both the software and the associated preprint as below."
+title: "Telos-S Backend: Core Analysis Pipeline for Zero-Shot Structural Risk Quantification in SARS-CoV-2 Spike Protein"
+abstract: >-
+  Core scientific pipeline for Telos-S, implementing sequence ingestion and
+  quality control, biological coordinate anchoring against the Wuhan-Hu-1
+  reference (NC_045512.2), the Aggression Score engine, and the Telos
+  Prophet evolutionary forecasting module. Built on the ESM-2 protein
+  language model in a zero-shot configuration.
+authors:
+  - family-names: "Armuelles Zeballos"
+    given-names: "Richard Alexander"
+    affiliation: "Telos Genomics"
+version: 0.1.0
+date-released: "2026-07-15"
+doi: 10.5281/zenodo.21380916
+url: "https://github.com/Telos-Genomics/telos-s-backend"
+repository-code: "https://github.com/Telos-Genomics/telos-s-backend"
+license: MIT
+keywords:
+  - SARS-CoV-2
+  - protein language model
+  - ESM-2
+  - genomic surveillance
+  - structural biology
+  - spike protein
+  - zero-shot learning
+  - bioinformatics
+identifiers:
+  - type: doi
+    value: 10.5281/zenodo.21380916
+    description: "Archived snapshot of this software version on Zenodo"
+preferred-citation:
+  type: article
+  title: "Lineage-Independent Structural Risk Detection in SARS-CoV-2 Spike Protein via Zero-Shot Protein Language Modeling"
+  authors:
+    - family-names: "Armuelles Zeballos"
+      given-names: "Richard Alexander"
+      affiliation: "Telos Genomics"
+  doi: 10.5281/zenodo.21381359
+  year: 2026

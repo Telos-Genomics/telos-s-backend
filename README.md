@@ -1,5 +1,7 @@
 # TELOS-S v1.0
 
+[![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21380916.svg)](https://doi.org/10.5281/zenodo.21380916)
+
 ### Powered by Telos Genomics
 
 **Predictive Intelligence Engine for Protein Evolution.**
