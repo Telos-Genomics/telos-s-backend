@@ -1,4 +1,4 @@
-# TELOS-S v1.0
+# TELOS-S v0.1.1
 
 [![DOI](https://zenodo.org/badge/DOI/10.5281/zenodo.21380916.svg)](https://doi.org/10.5281/zenodo.21380916)
 
