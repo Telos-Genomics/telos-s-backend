@@ -471,8 +471,8 @@ def run_analysis_pipeline(
             "files": {
                 "csv": f"{base_url}{report_csv_rel_path}",
                 "heatmap": f"{base_url}{heatmap_rel_path}",
-                "informe_txt": f"{base_url}{report_txt_rel_path}",
-                "informe_pdf": f"{base_url}{report_pdf_rel_path}"
+                "txt_report": f"{base_url}{report_txt_rel_path}",
+                "pdf_report": f"{base_url}{report_pdf_rel_path}"
             }
         }
 
