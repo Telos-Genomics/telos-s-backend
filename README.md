@@ -20,12 +20,12 @@ Use only confirmed sequencing data. Positions marked with `X` are excluded from 
 
 ## 🛠️ System Components
 
-### 1. `extraer_spike.py`
+### 1. `spike_extractor.py`
 
 Extract spike protein from SARS-CoV-2 genome
 
 ```bash
-python3 extraer_spike.py <reference.txt>
+python3 spike_extractor.py <reference.txt>
 ```
 
 **Output**
@@ -34,7 +34,7 @@ python3 extraer_spike.py <reference.txt>
 
 ---
 
-### 2. `alineador_secuencias.py`
+### 2. `sequence_aligner.py`
 
 Align the variant spike against Wuhan spike using template-based alignment.
 
@@ -45,7 +45,7 @@ Align the variant spike against Wuhan spike using template-based alignment.
 - Discarded insertions (they do not have a canonical position)
 
 ```bash
-python3 alineador_secuencias.py <referencia.txt> <variante.txt>
+python3 sequence_aligner.py <referencia.txt> <variante.txt>
 ```
 
 **Output**:
@@ -55,18 +55,18 @@ python3 alineador_secuencias.py <referencia.txt> <variante.txt>
 
 ---
 
-### 3. `imputar_secuencia.py` ⭐ NEW
+### 3. `impute_sequence.py`
 
 Try filling in the spaces with 'X' using the reference (Wuhan) as a template; the imputed positions will not be used in subsequent calculations.
 
-**Estrategia**:
+**Strategy**:
 
 - Verify that the reference and variant are correctly aligned.
 - Make sure the reference doesn't have a gap (-) or an 'X' to mirror the sequences
 - It performs the operation on data loss of 5 or more blocks
 
 ```bash
-python3 imputar_secuencia.py <output/s/spike_aligned/spike_wuhan_ref.txt> <output/s/spike_aligned/spike_variant_name.txt>
+python3 impute_sequence.py <output/s/spike_aligned/spike_wuhan_ref.txt> <output/s/spike_aligned/spike_variant_name.txt>
 ```
 
 **Output**:
@@ -78,9 +78,9 @@ python3 imputar_secuencia.py <output/s/spike_aligned/spike_wuhan_ref.txt> <outpu
 
 ```json
 {
-    "metodo": "Imputaci\u00f3n por Referencia",
-    "total_imputados": 20,
-    "posiciones": [
+    "metodo": "Reference-based Imputation",
+    "total_imputed_sites": 20,
+    "positional_data": [
         {
             "idx": 784,
             "wuhan_pos": 780,
@@ -108,13 +108,13 @@ python3 imputar_secuencia.py <output/s/spike_aligned/spike_wuhan_ref.txt> <outpu
 
 ---
 
-### 4. `oraculo_mutaciones.py`
+### 4. `mutations_oracle.py`
 
 Predicts future evolution in 4 critical positions: 452, 484, 501, 681 only if the positions are real (not imputed).
 Predicts the top 5 most probable mutations at each position with % confidence based on structural stability.
 
 ```bash
-python3 oraculo_mutaciones.py <spike_aligned.txt> [--cpu]
+python3 mutations_oracle.py <spike_aligned.txt> [--cpu]
 ```
 
 **Output**: `output/prophet/mutation_predictions_spike_variant_name.json`
@@ -125,10 +125,10 @@ python3 oraculo_mutaciones.py <spike_aligned.txt> [--cpu]
 [
     {
         "target": "Sitio_RBM_452",
-        "detected_position": 452,
+        "wuhan_position": 452,
         "aligned_index": 451,
-        "clean_index": 451,
-        "original": "R",
+        "clean_sequence_index": 451,
+        "original_aa": "R",
         "predictions": [
             {
                 "amino": "G",
@@ -158,32 +158,32 @@ python3 oraculo_mutaciones.py <spike_aligned.txt> [--cpu]
 
 ---
 
-### 5. `comparador_inteligente.py`
+### 5. `variant_comparator.py`
 
 Compare reference vs variant, calculate LLR and Risk Score.
 
 ```bash
-python3 comparador_inteligente.py <ref_aligned.txt> <var_aligned.txt> [--cpu]
+python3 variant_comparator.py <ref_aligned.txt> <var_aligned.txt> [--cpu]
 ```
 
-**Output**: `output/s/report/reporte_spike_variante.csv`
+**Output**: `output/s/reports/reporte_spike_variante.csv`
 
 Columns:
 
 - `Mutation`: "E484K" format
-- `Zone`: CRITICAL/HIGH/Medium/Normal
+- `Context`: CRITICAL/HIGH/Medium/Normal
 - `LLR`: Log-likelihood ratio (structural stability)
 - `Score`: Combined biological risk
 - `P_Original`, `P_Mutant`: Model probabilities
 
 ---
 
-### 6. `analizador_final.py`
+### 6. `final_analyzer.py`
 
 Comprehensive analysis: lineage, scoring, heatmap, executive report.
 
 ```bash
-python3 analizador_final.py <reporte.csv>
+python3 final_analyzer.py <report.csv>
 ```
 
 **Reliability System**:
@@ -209,7 +209,7 @@ python3 analizador_final.py <reporte.csv>
 
 ## ⚙️ Configurable Parameters
 
-### Context Window (`analizador_final.py`)
+### Context Window (`final_analyzer.py`)
 
 Defined as `CONTEXT_WINDOW = 5` on line 35.
 
@@ -247,7 +247,7 @@ The percentage indicates what fraction of the lineage signatures are present:
 
 **Solution**: Use `sequence_aligner.py` with Wuhan as a reference.
 
-### Error: "Trace trap" on Mac
+### Error: "Trace trap" on Apple Silicon
 
 **Cause**: Operations not supported by MPS.
 
