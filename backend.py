@@ -31,7 +31,7 @@ import os
 app = FastAPI(
     title="Telos-S API",
     description="Genomic analysis of SARS-CoV-2 variants with epidemiological prediction",
-    version="0.1.0-mvp",
+    version="0.1.1",
     docs_url="/docs",
     redoc_url="/redoc"
 )
