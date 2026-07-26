@@ -68,14 +68,14 @@ else
     # -----------------------------------------------------------------------
     echo "🧬 Extracting Spike protein from Wuhan genome..."
  
-    python3 modules/extraer_spike.py "$WUHAN_FASTA"
+    python3 modules/spike_extractor.py "$WUHAN_FASTA"
  
     # spike_extractor.py saves to output/s/spike/spike_<name>.txt
     # We need to copy it to the standard location used by the pipeline
     EXTRACTED=$(find /app/output/s/spike -name "spike_*.txt" | head -1)
  
     if [ -z "$EXTRACTED" ]; then
-        echo "❌ ERROR: extraer_spike.py ran but no output file was found."
+        echo "❌ ERROR: spike_extractor.py ran but no output file was found."
         echo "   Check the script logs above for errors."
         exit 1
     fi
