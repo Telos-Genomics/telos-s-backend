@@ -93,7 +93,7 @@ class VariantMutation(BaseModel):
     zone: str
     llr: float
     score: float
-    confidence: str  # CONFIABLE, SOSPECHOSA, IMPUTADA, INVALIDA
+    confidence: str  # REALIABLE, SUSPECT, IMPUTED, INVALID
 
 
 class AnalysisResults(BaseModel):
