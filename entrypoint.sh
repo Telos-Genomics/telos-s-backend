@@ -1,9 +1,9 @@
 #!/bin/bash
 # =============================================================================
 # TELOS-S — entrypoint.sh
-# Ejecutado al arrancar el contenedor.
-# Si la referencia Wuhan no existe, la descarga de NCBI y extrae la Spike.
-# Luego arranca el servidor FastAPI.
+# This script is executed when the container starts.
+# If the Wuhan reference doesn't exist, it downloads the NCBI data and extracts the Spike protein.
+# Then, it starts the FastAPI server.
 # =============================================================================
  
 set -e
@@ -17,14 +17,14 @@ echo "  TELOS-S Backend — Starting up"
 echo "========================================"
  
 # -----------------------------------------------------------------------
-# PASO 1: Verificar / descargar referencia Wuhan
+# STEP 1: Verify/download the Wuhan reference
 # -----------------------------------------------------------------------
 if [ -f "$WUHAN_SPIKE" ]; then
     echo "✅ Wuhan Spike reference found at $WUHAN_SPIKE — skipping download"
 else
     echo "📥 Wuhan Spike reference not found. Downloading NC_045512.2 from NCBI..."
  
-    # Intentar descarga (con reintentos)
+    # Attempting download (with retries)
     MAX_RETRIES=3
     RETRY=0
     SUCCESS=false
@@ -64,14 +64,14 @@ else
     echo ""
  
     # -----------------------------------------------------------------------
-    # PASO 2: Extraer la proteína Spike
+    # STEP 2: Extracting the Spike protein
     # -----------------------------------------------------------------------
     echo "🧬 Extracting Spike protein from Wuhan genome..."
  
     python3 modules/extraer_spike.py "$WUHAN_FASTA"
  
-    # extraer_spike.py guarda en output/s/spike/spike_<nombre>.txt
-    # necesitamos copiarlo a la ubicación estándar que usa el pipeline
+    # spike_extractor.py saves to output/s/spike/spike_<name>.txt
+    # We need to copy it to the standard location used by the pipeline
     EXTRACTED=$(find /app/output/s/spike -name "spike_*.txt" | head -1)
  
     if [ -z "$EXTRACTED" ]; then
@@ -87,7 +87,7 @@ else
 fi
  
 # -----------------------------------------------------------------------
-# PASO 3: Verificar que el spike de referencia tiene longitud correcta
+# Step 3: Verify that the reference spike has the correct length.
 # -----------------------------------------------------------------------
 SPIKE_LEN=$(wc -c < "$WUHAN_SPIKE" | tr -d ' ')
  
@@ -97,21 +97,21 @@ if [ "$SPIKE_LEN" -lt 1273 ] || [ "$SPIKE_LEN" -gt 1300 ]; then
 fi
  
 # -----------------------------------------------------------------------
-# PASO 4: Crear directorios de output necesarios para el pipeline
+# STEP 4: Create the necessary output directories for the pipeline.
 # -----------------------------------------------------------------------
 mkdir -p \
     /app/output/uploads \
     /app/output/jobs \
     /app/output/s/spike \
     /app/output/s/spike_aligned \
-    /app/output/s/report \
+    /app/output/s/reports \
     /app/output/prophet
  
 echo "✅ Output directories ready"
 echo ""
  
 # -----------------------------------------------------------------------
-# PASO 5: Arrancar el servidor FastAPI
+# STEP 5: Starting the FastAPI server
 # -----------------------------------------------------------------------
 echo "🚀 Starting Telos-S API on port 8000..."
 echo ""

@@ -1,12 +1,12 @@
 # =============================================================================
 # TELOS-S Backend — Dockerfile
-# Va en la RAÍZ del repo telos-s-backend (junto a backend.py y requirements.txt)
+# Located in the root of the telos-s-backend repository (along with backend.py and requirements.txt)
 # Python 3.11 slim · FastAPI · ESM-2 via HuggingFace · Biopython
 # =============================================================================
 #
-# El modelo ESM-2 (2.5GB) NO se incluye en la imagen.
-# Se descarga en el primer análisis y queda en el volumen huggingface_cache.
-# Esto mantiene la imagen en ~1.5GB en lugar de ~4GB.
+# The ESM-2 model (2.5GB) is not included in the image.
+# It is downloaded during the first analysis and remains in the huggingface_cache volume.
+# This keeps the image size at approximately 1.5GB instead of ~4GB.
 # =============================================================================
  
 FROM python:3.11-slim
@@ -14,12 +14,12 @@ FROM python:3.11-slim
 # Metadata
 LABEL maintainer="Telos Genomics"
 LABEL description="Telos-S API — Predictive Intelligence Engine for Protein Evolution"
-LABEL version="1.0.0"
+LABEL version="0.1.1"
  
-# Variables de build
+# Build variables
 ARG DEBIAN_FRONTEND=noninteractive
  
-# Dependencias del sistema necesarias para Biopython y Torch
+# System dependencies required for Biopython and Torch
 RUN apt-get update && apt-get install -y --no-install-recommends \
     curl \
     git \
@@ -29,13 +29,13 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 WORKDIR /app
  
 # ---------------------------------------------------------------------------
-# Dependencias Python
-# Copiamos requirements primero para aprovechar el cache de Docker
+# Python Dependencies
+# We first copy the requirements file to take advantage of Docker's caching mechanism.
 # ---------------------------------------------------------------------------
 COPY requirements.txt .
  
-# Instalamos PyTorch CPU (compatible con cualquier arquitectura)
-# En producción con GPU NVIDIA, cambiar a la versión con CUDA
+# We install PyTorch for CPU (compatible with any architecture)
+# In production environments using NVIDIA GPUs, switch to the version with CUDA.
 RUN pip install --no-cache-dir \
     torch==2.4.1 \
     --index-url https://download.pytorch.org/whl/cpu
@@ -43,15 +43,15 @@ RUN pip install --no-cache-dir \
 RUN pip install --no-cache-dir -r requirements.txt
  
 # ---------------------------------------------------------------------------
-# Código de la aplicación
+# Application code
 # ---------------------------------------------------------------------------
 COPY . .
  
-# Entrypoint: descarga Wuhan si no existe, luego arranca el servidor
+# Starting point: If Wuhan doesn't exist, download it first, then start the server.
 RUN chmod +x entrypoint.sh
  
 # ---------------------------------------------------------------------------
-# Variables de entorno
+# Environment variables
 # ---------------------------------------------------------------------------
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONDONTWRITEBYTECODE=1
@@ -59,11 +59,11 @@ ENV TRANSFORMERS_CACHE=/root/.cache/huggingface
 ENV HF_HOME=/root/.cache/huggingface
 ENV TELOS_FORCE_CPU=true
  
-# Puerto expuesto
+# Exposed port
 EXPOSE 6002
  
 # ---------------------------------------------------------------------------
 # Entrypoint
-# Descarga NC_045512.2 y extrae la Spike si no existe, luego arranca uvicorn
+# Download NC_045512.2 and extract the spike if it doesn't exist, then start uvicorn
 # ---------------------------------------------------------------------------
 ENTRYPOINT ["./entrypoint.sh"]
