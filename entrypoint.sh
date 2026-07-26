@@ -8,7 +8,7 @@
  
 set -e
  
-WUHAN_FASTA="/app/wuhan_ref.fasta"
+WUHAN_FASTA="/app/NC_0455122.fasta"
 WUHAN_SPIKE="/app/spike_wuhan.txt"
 NCBI_URL="https://eutils.ncbi.nlm.nih.gov/entrez/eutils/efetch.fcgi?db=nuccore&id=NC_045512.2&rettype=fasta&retmode=text"
  

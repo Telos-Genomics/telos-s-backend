@@ -34,12 +34,6 @@ WORKDIR /app
 # ---------------------------------------------------------------------------
 COPY requirements.txt .
  
-# We install PyTorch for CPU (compatible with any architecture)
-# In production environments using NVIDIA GPUs, switch to the version with CUDA.
-RUN pip install --no-cache-dir \
-    torch==2.4.1 \
-    --index-url https://download.pytorch.org/whl/cpu
- 
 RUN pip install --no-cache-dir -r requirements.txt
  
 # ---------------------------------------------------------------------------

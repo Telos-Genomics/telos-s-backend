@@ -1,6 +1,6 @@
 # Core IA
-torch
-transformers
+torch==2.4.1
+transformers==4.44.2
 numpy
 pandas
 
