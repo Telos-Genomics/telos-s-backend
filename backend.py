@@ -36,10 +36,15 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+origins = [
+    "http://localhost:6001",
+    "http://127.0.0.1:6001",
+]
+
 # CORS to allow requests from the frontend
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # In production: specify allowed domains
+    allow_origins=origins,  # In production: specify allowed domains
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -312,6 +317,8 @@ def run_analysis_pipeline(
         reference_name = reference_fasta_path.stem
 
         cpu_flag = ["--cpu"] if use_cpu else []
+        batch_size_value = os.environ.get('BATCH_SIZE', '4')
+        batch_flag = ["--batch-size", batch_size_value]
 
         # ====================================================================
         # STEP 1: Spike extraction
@@ -396,7 +403,7 @@ def run_analysis_pipeline(
         save_job_status(job_id, status)
 
         result = run_pipeline_step(
-            ["python3", "modules/variant_comparator.py", str(aligned_ref), str(aligned_var)] + cpu_flag,
+            ["python3", "modules/variant_comparator.py", str(aligned_ref), str(aligned_var)] + cpu_flag + batch_flag,
             "ESM-2 Comparator"
         )
         if not result["success"]:

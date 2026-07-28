@@ -1,11 +1,11 @@
 import os
 import sys
 import math
-import torch
-from transformers import EsmTokenizer, EsmForMaskedLM
-import torch.nn.functional as F
 import csv
 import time
+import torch
+import torch.nn.functional as F
+from transformers import EsmTokenizer, EsmForMaskedLM
 
 # ---------------------------------------------------------------------------
 # DEVICE STRATEGY:
@@ -15,7 +15,7 @@ import time
 #     to avoid MPS trace traps related to advanced indexing/tensor operations.
 # ---------------------------------------------------------------------------
 
-def get_device():
+def get_device() -> torch.device:
     """Detects and returns the best available computing device (CUDA, MPS, or CPU)."""
     if torch.cuda.is_available():
         device = torch.device("cuda")
@@ -53,7 +53,20 @@ def analyze_context(position: int) -> tuple[str, float]:
         return "NORMAL (Structural Region)", 1.0
 
 
-def compare_with_intelligence(ref_path: str, var_path: str, force_cpu: bool = False):
+def find_mask_index(input_ids_row: torch.Tensor, mask_token_id: int) -> int | None:
+    """Returns the index (int) of the [MASK] token in a single 1D row tensor."""
+    mask_positions = (input_ids_row == mask_token_id).nonzero(as_tuple=False)
+    if len(mask_positions) > 0:
+        return mask_positions[0][-1].item()
+    return None
+
+
+def compare_with_intelligence(
+    ref_path: str, 
+    var_path: str, 
+    force_cpu: bool = False, 
+    batch_size: int = 4
+):
     """
     Compares the variant sequence against the reference using ESM-2 model embeddings to assess mutation impact.
 
@@ -61,6 +74,7 @@ def compare_with_intelligence(ref_path: str, var_path: str, force_cpu: bool = Fa
         ref_path: Path to the reference sequence file.
         var_path: Path to the variant sequence file.
         force_cpu: If True, forces CPU usage regardless of hardware availability.
+        batch_size: Number of masked sequences to pass simultaneously through the model.
     """
     # ------------------------------------------------------------------
     # 1. Device Setup
@@ -111,25 +125,13 @@ def compare_with_intelligence(ref_path: str, var_path: str, force_cpu: bool = Fa
         sys.exit(1)
 
     # ------------------------------------------------------------------
-    # 4. Mask Index Finding Helper (CPU Safe)
+    # 4. Phase 1: Pre-scanning Sequence (Indels & Substitution Capture)
     # ------------------------------------------------------------------
-    def find_mask_index(input_ids_cpu: torch.Tensor, mask_token_id: int) -> int | None:
-        """Returns the index (int) of the [MASK] token in the sequence."""
-        for idx in range(input_ids_cpu.shape[1]):
-            if input_ids_cpu[0, idx].item() == mask_token_id:
-                return idx
-        return None
-
-
-    # ------------------------------------------------------------------
-    # 5. Main Loop Execution
-    # ------------------------------------------------------------------
-    accumulated_results = []
-    start_time = time.time()
-
     print("\n" + "=" * 60)
     print("  GENOMIC SURVEILLANCE REPORT")
     print("=" * 60)
+
+    substitution_indices = []
 
     for i in range(len(ref_seq)):
         # --- Insertions and Deletions (No model inference needed) ---
@@ -141,90 +143,101 @@ def compare_with_intelligence(ref_path: str, var_path: str, force_cpu: bool = Fa
             print(f"\n🟡 Deletion at position {i + 1}")
             continue
 
-        # --- Only proceed if there is a substitution ---
-        if ref_seq[i] == var_seq[i]:
-            continue # Wildtype, skip inference
+        # --- Filter out Wildtypes; save indices of true Substitutions ---
+        if ref_seq[i] != var_seq[i]:
+            substitution_indices.append(i)
 
-        pos = i + 1
-        orig_aa, mut_aa = ref_seq[i], var_seq[i]
-        context, context_weight = analyze_context(pos)
+    # ------------------------------------------------------------------
+    # 5. Phase 2 & 3: Batch Processing & Post-processing
+    # ------------------------------------------------------------------
+    accumulated_results = []
+    start_time = time.time()
 
-        # --- Prepare Input with [MASK] ---
-        # Create a placeholder sequence for the model where only one residue is masked.
-        temp_sequence = list(ref_seq)
-        temp_sequence[i] = tokenizer.mask_token
-        masked_input = "".join(temp_sequence)
+    for batch_start in range(0, len(substitution_indices), batch_size):
+        batch_positions = substitution_indices[batch_start : batch_start + batch_size]
 
-        # Get tensor input IDs (Must be cloned to CPU for safe indexing later)
-        inputs = tokenizer(masked_input, return_tensors="pt")
-        input_ids_cpu = inputs["input_ids"].clone()
+        # --- Prepare Masked Sequences Batch ---
+        masked_sequences = []
+        for idx in batch_positions:
+            temp_seq = list(ref_seq)
+            temp_seq[idx] = tokenizer.mask_token
+            masked_sequences.append("".join(temp_seq))
 
-        # Move required tensors to GPU for inference
+        # Tokenize with padding for uniform batch shape
+        inputs = tokenizer(masked_sequences, return_tensors="pt", padding=True)
         inputs_gpu = {k: v.to(device) for k, v in inputs.items()}
 
-        # --- Inference on GPU ---
+        # --- Model Inference on GPU ---
         with torch.no_grad():
             logits = model(**inputs_gpu).logits
 
-        # --- Move Logits back to CPU for Safe Post-processing ---
+        # --- Move Tensors to CPU for Safe Post-processing ---
         logits_cpu = logits.cpu()
+        input_ids_cpu = inputs["input_ids"].cpu()
 
-        # --- CPU Post-processing ---
-        mask_idx = find_mask_index(input_ids_cpu, tokenizer.mask_token_id)
-        if mask_idx is None:
-            print(f"\n⚠️ Could not locate [MASK] token at position {pos}, skipping inference.")
-            continue
+        # --- Post-process Each Element in Batch ---
+        for idx_in_batch, seq_idx in enumerate(batch_positions):
+            pos = seq_idx + 1
+            orig_aa, mut_aa = ref_seq[seq_idx], var_seq[seq_idx]
+            
+            # Recalculate context & weight specifically for this mutation's position
+            context, context_weight = analyze_context(pos)
 
-        # Extract logits for the masked position
-        logits_mask = logits_cpu[0, mask_idx, :]  # shape: [vocab_size]
-        probs = F.softmax(logits_mask, dim=-1)  # shape: [vocab_size]
+            # Find [MASK] token in this batch row
+            mask_idx = find_mask_index(input_ids_cpu[idx_in_batch], tokenizer.mask_token_id)
+            if mask_idx is None:
+                print(f"\n⚠️ Could not locate [MASK] token at position {pos}, skipping inference.")
+                continue
 
-        # Calculate probabilities for the original and mutant residues
-        orig_id = tokenizer.convert_tokens_to_ids(orig_aa)
-        mut_id = tokenizer.convert_tokens_to_ids(mut_aa)
+            # Extract logits for masked position
+            logits_mask = logits_cpu[idx_in_batch, mask_idx, :]
+            probs = F.softmax(logits_mask, dim=-1)
 
-        p_original = probs[orig_id].item()
-        p_mutant = probs[mut_id].item()
+            # Extract probabilities
+            orig_id = tokenizer.convert_tokens_to_ids(orig_aa)
+            mut_id = tokenizer.convert_tokens_to_ids(mut_aa)
 
-        # Calculate Likelihood Ratio (LLR) with protection against log(0)
-        if p_original > 0 and p_mutant > 0:
-            llr = math.log(p_mutant / p_original)
-        else:
-            llr = -10.0  # Highly unlikely shift
+            p_original = probs[orig_id].item()
+            p_mutant = probs[mut_id].item()
 
-        # Determine model's prediction suggestion
-        top_prob, top_idx = torch.topk(probs, 1)
-        model_suggestion = tokenizer.decode(top_idx[0].item())
-        p_suggestion = top_prob[0].item()
+            # Calculate LLR with safety guard
+            if p_original > 0 and p_mutant > 0:
+                llr = math.log(p_mutant / p_original)
+            else:
+                llr = -10.0
 
-        # --- Scoring ---
-        # Score combines LLR difference and biological context weighting
-        score_final  = (1 - abs(llr)) * context_weight
-        risk_score   = (context_weight * 20) + (llr * 10) # Higher risk if high context/high mutation likelihood
+            # AI Suggestion
+            top_prob, top_idx = torch.topk(probs, 1)
+            model_suggestion = tokenizer.decode(top_idx[0].item())
+            p_suggestion = top_prob[0].item()
 
-        # Status determination based on model output thresholds
-        is_threat = score_final > 1.5 and llr > -0.5
-        status_text = "🔴 THREAT" if is_threat else "⚪ OBSERVATION"
+            # Scoring
+            score_final = (1 - abs(llr)) * context_weight
+            risk_score = (context_weight * 20) + (llr * 10)
 
-        # --- Accumulate Result ---
-        accumulated_results.append({
-            "Mutation": f"{orig_aa}{pos}{mut_aa}",
-            "Context": context,
-            "LLR": round(llr, 4),
-            "Status": status_text,
-            "Score": round(risk_score, 1),
-            "Suggestion_AI": f"{model_suggestion} ({p_suggestion:.4f})",
-            "P_Original": round(p_original, 6),
-            "P_Mutant": round(p_mutant, 6),
-        })
+            # Threat Assessment
+            is_threat = score_final > 1.5 and llr > -0.5
+            status_text = "🔴 THREAT" if is_threat else "⚪ OBSERVATION"
 
-        # --- Print Detailed Output (Simplified for readability) ---
-        print(f"\n--- MUTATION ANALYSIS ---")
-        print(f"Position: {pos} | Context: {context}")
-        print(f"LLR: {llr:.4f}")
-        print(f"P(Original): {p_original:.6f} | P(Mutant): {p_mutant:.6f}")
-        print(f"Status: {status_text} (Score: {risk_score:.1f})")
-        print(f"AI Suggestion: {model_suggestion} ({p_suggestion:.4f})")
+            # Accumulate Result
+            accumulated_results.append({
+                "Mutation": f"{orig_aa}{pos}{mut_aa}",
+                "Context": context,
+                "LLR": round(llr, 4),
+                "Status": status_text,
+                "Score": round(risk_score, 1),
+                "Suggestion_AI": f"{model_suggestion} ({p_suggestion:.4f})",
+                "P_Original": round(p_original, 6),
+                "P_Mutant": round(p_mutant, 6),
+            })
+
+            # Real-time Console Logging
+            print(f"\n--- MUTATION ANALYSIS ---")
+            print(f"Position: {pos} | Context: {context}")
+            print(f"LLR: {llr:.4f}")
+            print(f"P(Original): {p_original:.6f} | P(Mutant): {p_mutant:.6f}")
+            print(f"Status: {status_text} (Score: {risk_score:.1f})")
+            print(f"AI Suggestion: {model_suggestion} ({p_suggestion:.4f})")
 
     # ------------------------------------------------------------------
     # 6. Summary and Reporting
@@ -236,6 +249,7 @@ def compare_with_intelligence(ref_path: str, var_path: str, force_cpu: bool = Fa
     print("  SUMMARY")
     print("=" * 60)
     print(f"Device Used: {device}")
+    print(f"Batch Size Used: {batch_size}")
     print(f"Total Mutations Analyzed: {n_mutations}")
     if n_mutations > 0:
         avg_time = total_time / n_mutations
@@ -250,15 +264,16 @@ def compare_with_intelligence(ref_path: str, var_path: str, force_cpu: bool = Fa
 
 def save_csv_report(results: list[dict], filename: str):
     """Saves the structured results dictionary to a CSV file."""
-    folder_path   = "output/s/reports"
+    folder_path = "output/s/reports"
     full_path = os.path.join(folder_path, filename)
 
     try:
         os.makedirs(folder_path, exist_ok=True)
 
-        # Define fieldnames based on the structure of the results list
-        fieldnames = ["Mutation", "Context", "LLR", "Status", "Score", 
-                      "Suggestion_AI", "P_Original", "P_Mutant"]
+        fieldnames = [
+            "Mutation", "Context", "LLR", "Status", "Score", 
+            "Suggestion_AI", "P_Original", "P_Mutant"
+        ]
 
         with open(full_path, "w", newline="", encoding="utf-8") as f:
             writer = csv.DictWriter(f, fieldnames=fieldnames)
@@ -272,15 +287,22 @@ def save_csv_report(results: list[dict], filename: str):
 
 
 if __name__ == "__main__":
-    # Explicit CLI call matching the user's request structure
     if len(sys.argv) < 3:
         print("Usage:")
-        print("  python3 variant_comparator.py <reference.txt> <variant.txt> [--cpu]")
+        print("  python3 variant_comparator.py <reference.txt> <variant.txt> [--cpu] [--batch-size N]")
         print("\nExample:")
-        print("  python3 variant_comparator.py output/s/spike_aligned/spike_NC_0455122.txt output/s/spike_aligned/spike_variante.txt")
-        print("\nOptions:")
-        print("  --cpu   Force CPU usage (disable GPU)")
+        print("  python3 variant_comparator.py ref.txt var.txt --batch-size 8")
         sys.exit(1)
 
     force_cpu = "--cpu" in sys.argv
-    compare_with_intelligence(sys.argv[1], sys.argv[2], force_cpu)
+    
+    # Parse batch size option if passed via CLI, else default to 8
+    batch_size = 8
+    if "--batch-size" in sys.argv:
+        try:
+            bs_idx = sys.argv.index("--batch-size") + 1
+            batch_size = int(sys.argv[bs_idx])
+        except (IndexError, ValueError):
+            print("⚠️ Invalid batch size provided. Falling back to default (8).")
+
+    compare_with_intelligence(sys.argv[1], sys.argv[2], force_cpu=force_cpu, batch_size=batch_size)

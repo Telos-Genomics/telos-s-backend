@@ -52,6 +52,8 @@ ENV PYTHONDONTWRITEBYTECODE=1
 ENV TRANSFORMERS_CACHE=/root/.cache/huggingface
 ENV HF_HOME=/root/.cache/huggingface
 ENV TELOS_FORCE_CPU=true
+ENV ESM_2_SIZE=facebook/esm2_t33_650M_UR50D
+ENV BATCH_SIZE=16
  
 # Exposed port
 EXPOSE 6002
