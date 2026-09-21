@@ -32,10 +32,12 @@ data/raw/
 
 # --- Resultados y Reportes ---
 # Es mejor que cada usuario genere sus propios reportes
+# (eval/*.csv es la excepción: set retrospectivo curado, sí se versiona)
 output/
 results/
 reportes/
 *.csv
+!eval/*.csv
 *.png
 *.pdf
 informe_ejecutivo_*.txt

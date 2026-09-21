@@ -1,0 +1,5 @@
+accession,isolate_label,lineage,origin,collection_date,release_date,dictionary_coverage,outcome_tier,outcome_evidence,outcome_annotated_at,annotator,include,exclusion_reason,notes
+OK091006.1,Delta,B.1.617.2,Japan 2021,2021,,yes,baseline,WHO VOC tracking; elevated transmissibility with moderate escape (paper §4.2),,seed-from-paper,yes,,Qr 63.64% - 7 reliable (paper Table 2)
+OL672836.1,Omicron BA.1,B.1.1.529,Belgium 2021 first EU detection,2021,,yes,elevated,Global displacement of prior lineages; 3-4x neutralization escape (paper §4.2; Vanmechelen et al. 2022),,seed-from-paper,yes,,Qr 100% - 33 reliable (paper Table 2)
+PX916454.1,BF.11.3,BF.11.3,Canada collected 2022,2022,2026,no,pending,,,,yes,,No dedicated dictionary entry (84.6% nearest BA.1); trajectory not established in paper - requires external annotation (paper §3.4)
+PZ155177.1,XFG.5.1.7,XFG.5.1.7,USA 2026,,2026-03-16,no,pending,,,,yes,,LOCUS 2026-03-16; analyzed 2026-03-21 5d post-release; 69 reliable; outcome to annotate (paper §3.4)
