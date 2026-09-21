@@ -1,20 +1,20 @@
-# Core IA
+# Core IA (pinned — ESM-2 650M validated with these)
 torch==2.4.1
 transformers==4.44.2
-numpy
-pandas
+numpy==1.26.4
+pandas==2.2.2
 
-# Bioinformática
-biopython
-scikit-learn
+# Bioinformática (wheels precompiladas para x86_64 + aarch64; 1.83 era sdist y rompía el build sin gcc)
+biopython==1.86
+scikit-learn==1.5.0
 
 # API y Servidor
-fastapi
-uvicorn
-python-multipart
-pydantic
-python-dotenv
+fastapi==0.110.3
+uvicorn==0.29.0
+python-multipart==0.0.9
+pydantic==2.7.4
+python-dotenv==1.0.1
 
-# Visualización (Opcional para el backend)
-matplotlib
-reportlab
+# Visualización (backend reports)
+matplotlib==3.8.4
+reportlab==4.1.0

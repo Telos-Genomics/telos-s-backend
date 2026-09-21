@@ -1,9 +1,22 @@
 import os
 import sys
+from pathlib import Path
 from Bio import Align
 
+sys.path.insert(0, os.path.dirname(__file__))
+try:
+    from telos_config import (
+        ALIGNED_DIR, ALIGN_MATCH_SCORE, ALIGN_MISMATCH_SCORE, GAP_EXTEND_SCORE,
+        GAP_OPEN_SCORE, SPIKE_LENGTH,
+    )
+except ImportError:
+    from modules.telos_config import (
+        ALIGNED_DIR, ALIGN_MATCH_SCORE, ALIGN_MISMATCH_SCORE, GAP_EXTEND_SCORE,
+        GAP_OPEN_SCORE, SPIKE_LENGTH,
+    )
+
 # ---------------------------------------------------------------------------
-# SPIKE SEQUENCE ALIGNER
+# SPIKE SEQUENCE ALIGNER (§2.3)
 # ---------------------------------------------------------------------------
 # Strategy: Template-based alignment
 #
@@ -23,7 +36,7 @@ from Bio import Align
 # ---------------------------------------------------------------------------
 
 
-def validate_reference(seq, expected=1273):
+def validate_reference(seq, expected=SPIKE_LENGTH):
     """
     Verify that the reference sequence has the expected length.
     
@@ -86,23 +99,23 @@ def align_template_based(ref_seq, var_seq):
     print(f"   Variant:   {len(var_seq)} aa")
     
     # ---------------------------------------------------------------------------
-    # 1. Global alignment with optimized penalties
+    # 1. Global alignment (§2.3: gap open -10, extend -0.5)
     # ---------------------------------------------------------------------------
     aligner = Align.PairwiseAligner()
     aligner.mode = 'global'
-    
+
     # Penalties for Gaps:
     #   - open_gap_score: penalty for CREATING a gap (first position)
     #   - extend_gap_score: penalty for EXTENDING a gap (consecutive positions)
     #
-    # We want to heavily penalize gaps in order to prevent the creation of unusual alignments, 
+    # We want to heavily penalize gaps in order to prevent the creation of unusual alignments,
     # but still allow for known deletions.
-    aligner.open_gap_score = -10
-    aligner.extend_gap_score = -0.5
-    
+    aligner.open_gap_score = GAP_OPEN_SCORE
+    aligner.extend_gap_score = GAP_EXTEND_SCORE
+
     # Match/mismatch scores
-    aligner.match_score = 2
-    aligner.mismatch_score = -1
+    aligner.match_score = ALIGN_MATCH_SCORE
+    aligner.mismatch_score = ALIGN_MISMATCH_SCORE
     
     alignments = aligner.align(ref_seq, var_seq)
     
@@ -197,15 +210,15 @@ def align_synchronize(ref_path, var_path):
     # ---------------------------------------------------------------------------
     # 2. Verify reference
     # ---------------------------------------------------------------------------
-    is_valid, message = validate_reference(ref_seq, expected=1273)
+    is_valid, message = validate_reference(ref_seq, expected=SPIKE_LENGTH)
     if not is_valid:
         print(message)
         print("\n💡 Tip: Download the Wuhan-Hu-1 Spike sequence:")
         print("   GenBank: QHD43416.1")
         print("   UniProt: P0DTC2")
         sys.exit(1)
-    
-    print("✅ Validated reference: Wuhan Spike, 1273 amino acids")
+
+    print(f"✅ Validated reference: Wuhan Spike, {SPIKE_LENGTH} amino acids")
     
     # ---------------------------------------------------------------------------
     # 3. Align
@@ -216,21 +229,18 @@ def align_synchronize(ref_path, var_path):
         print(f"\n❌ Error during alignment: {e}")
         sys.exit(1)
     
-    # ---------------------------------------------------------------------------
-    # 4. Save results
-    # ---------------------------------------------------------------------------
-    folder_path = "output/s/spike_aligned"
-    
+    # ------------------------------------------------------------------
+    # 4. Save results (contract: output/s/spike_aligned/<base>.txt)
+    # ------------------------------------------------------------------
     # Generar nombres de archivo basados en los paths de entrada
     name_ref_base = os.path.basename(ref_path).replace('.txt', '')
     name_var_base = os.path.basename(var_path).replace('.txt', '')
-    
-    path_ref_final = os.path.join(folder_path, f"{name_ref_base}.txt")
-    path_var_final = os.path.join(folder_path, f"{name_var_base}.txt")
-    
+
+    ALIGNED_DIR.mkdir(parents=True, exist_ok=True)
+    path_ref_final = ALIGNED_DIR / f"{name_ref_base}.txt"
+    path_var_final = ALIGNED_DIR / f"{name_var_base}.txt"
+
     try:
-        os.makedirs(folder_path, exist_ok=True)
-        
         with open(path_ref_final, "w", encoding="utf-8") as f:
             f.write(ref_aligned)
         
@@ -253,11 +263,11 @@ def align_synchronize(ref_path, var_path):
     with open(path_var_final, "r") as f:
         test_var = f.read().strip()
     
-    assert len(test_ref) == 1273, f"Error: ref_aligned have {len(test_ref)} chars"
-    assert len(test_var) == 1273, f"Error: var_aligned have {len(test_var)} chars"
+    assert len(test_ref) == SPIKE_LENGTH, f"Error: ref_aligned have {len(test_ref)} chars"
+    assert len(test_var) == SPIKE_LENGTH, f"Error: var_aligned have {len(test_var)} chars"
     assert '-' not in test_ref, "Error: The aligned reference have gaps"
     
-    print("✅ Successful verification: both sequences have 1273 characters.")
+    print(f"✅ Successful verification: both sequences have {SPIKE_LENGTH} characters.")
 
 
 if __name__ == "__main__":

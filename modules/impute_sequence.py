@@ -2,11 +2,21 @@ import os
 import sys
 import json
 
+sys.path.insert(0, os.path.dirname(__file__))
+try:
+    from telos_config import ALIGNED_DIR, IMPUTATION_BLOCK_THRESHOLD, PROPHET_DIR
+    LARGE_BLOCK_THRESHOLD = IMPUTATION_BLOCK_THRESHOLD
+    _USE_CONFIG_PATHS = True
+except ImportError:
+    from modules.telos_config import ALIGNED_DIR, IMPUTATION_BLOCK_THRESHOLD, PROPHET_DIR
+    LARGE_BLOCK_THRESHOLD = IMPUTATION_BLOCK_THRESHOLD
+    _USE_CONFIG_PATHS = True
+
 # ---------------------------------------------------------------------------
 # SEQUENCE IMPUTER (VERSION 2.0)
 # ---------------------------------------------------------------------------
 
-LARGE_BLOCK_THRESHOLD = 5  # Threshold for defining a "large" block (in Xs)
+# LARGE_BLOCK_THRESHOLD now imported from telos_config (NOT part of paper).
 
 def detect_x_blocks(sequence: str) -> list[tuple[int, int, int]]:
     """
@@ -131,13 +141,17 @@ def impute_sequence(variant_path: str, reference_path: str, threshold: int = LAR
                 if ref_char not in ['-', 'X']:
                     imputed_sequence_list[i] = ref_char
                     # Record metadata for this specific imputation event
+                    # Contract: 'idx' is canonical (consumed by mutations_oracle);
+                    # 'index' kept as legacy alias. 'wuhan_pos' 1-indexed.
                     imputed_positions_metadata.append({
+                        "idx": i,
                         "index": i,
                         "wuhan_pos": wuhan_position_map[i],
                         "total_blocks": len(all_blocks),
                         "small_block_count": len(small_blocks),
                         "large_block_count": len(large_blocks),
-                        "residue": ref_char
+                        "residue": ref_char,
+                        "res": ref_char,
                     })
 
     # ---------------------------------------------------------------------------
@@ -152,14 +166,10 @@ def impute_sequence(variant_path: str, reference_path: str, threshold: int = LAR
     # 5. Save results
     # ---------------------------------------------------------------------------
     base_name = os.path.basename(variant_path).replace('.txt', '')
-    output_dir = "output/s/spike_aligned"
-    json_report_dir = "output/prophet"
-    
-    final_seq_path = f"{output_dir}/{base_name}_imputed.txt"
-    json_meta_path = f"{json_report_dir}/imputation_{base_name}.json"
-
-    os.makedirs(output_dir, exist_ok=True)
-    os.makedirs(json_report_dir, exist_ok=True)
+    ALIGNED_DIR.mkdir(parents=True, exist_ok=True)
+    PROPHET_DIR.mkdir(parents=True, exist_ok=True)
+    final_seq_path = ALIGNED_DIR / f"{base_name}_imputed.txt"
+    json_meta_path = PROPHET_DIR / f"imputation_{base_name}.json"
 
     with open(final_seq_path, "w") as f:
         f.write(final_sequence)

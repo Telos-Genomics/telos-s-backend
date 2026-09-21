@@ -2,6 +2,20 @@ import sys
 import os
 from pathlib import Path
 import pandas as pd
+
+sys.path.insert(0, os.path.dirname(__file__))
+try:
+    from telos_config import (
+        ALERT_THRESHOLD_PCT, CONTEXT_WINDOW, FURIN_RANGE, INVALID, RBD_RANGE, RBM_RANGE,
+        RELIABLE, REPORTS_DIR, SCORE_HIGH, SCORE_MID, SPIKE_LENGTH, SUSPECT,
+        is_clean_context, risk_tier,
+    )
+except ImportError:
+    from modules.telos_config import (
+        ALERT_THRESHOLD_PCT, CONTEXT_WINDOW, FURIN_RANGE, INVALID, RBD_RANGE, RBM_RANGE,
+        RELIABLE, REPORTS_DIR, SCORE_HIGH, SCORE_MID, SPIKE_LENGTH, SUSPECT,
+        is_clean_context, risk_tier,
+    )
 import matplotlib
 matplotlib.use('Agg')  # <--- Force matplotlib to render without a display
 import matplotlib.pyplot as plt
@@ -37,7 +51,7 @@ from reportlab.lib.units import inch
 #      a warning, but never trigger an alert.
 # ---------------------------------------------------------------------------
 
-CONTEXT_WINDOW = 5  # residues on each side of an X
+# CONTEXT_WINDOW imported from telos_config (§2.2). Alias kept for backward compat.
 
 # NOTE ON DATA CONTRACT:
 # The DataFrame column names below ('Mutation', 'Score', 'Context', 'LLR',
@@ -113,6 +127,9 @@ def classify_reliability(df):
     return df, x_positions
 
 
+# is_clean_context / risk_tier imported from telos_config (single source).
+
+
 def analyze_strain(csv_path):
     df = pd.read_csv(csv_path)
 
@@ -130,17 +147,19 @@ def analyze_strain(csv_path):
     # Extra filter: only biological Spike positions (1-1273)
     df_reliable = df_reliable[
         (df_reliable['Pos'] >= 1) &
-        (df_reliable['Pos'] <= 1273) &
+        (df_reliable['Pos'] <= SPIKE_LENGTH) &
         (~df_reliable['Mutation'].str.startswith('-', na=False))
     ].copy()
 
     # ---------------------------------------------------------------------------
-    # 1. Sequence quality
+    # 1. Sequence quality  (§2.2: Qr = MT / (MT + MS + MI))
+    #    MT = Trusted/RELIABLE only. SUSPECT (MS) does NOT count as good.
     # ---------------------------------------------------------------------------
     total = len(df)
     n_invalid = len(df_invalid)
     n_suspect = len(df_suspect)
-    quality = ((total - n_invalid) / total) * 100 if total > 0 else 0.0
+    n_reliable_all = int((df['Reliability'] == 'RELIABLE').sum())
+    quality = (n_reliable_all / total) * 100 if total > 0 else 0.0
 
     # ---------------------------------------------------------------------------
     # 2. Aggression Score (reliable data only)
@@ -297,11 +316,11 @@ def analyze_strain(csv_path):
 
     generate_txt_report(df_reliable, df_suspect, df_invalid,
                          aggression_score, predicted_lineage, max_match_pct, quality,
-                         csv_path, prophet_data)
+                         csv_path, prophet_data, x_positions=x_positions)
 
     generate_pdf_report(df_reliable, df_suspect, df_invalid,
                          aggression_score, predicted_lineage, max_match_pct, quality,
-                         csv_path, prophet_data)
+                         csv_path, prophet_data, x_positions=x_positions)
 
 
 def identify_lineage(df_reliable, lineage_signatures):
@@ -351,9 +370,9 @@ def generate_heatmap(df_reliable, df_suspect, x_positions,
     # Background and critical zones
     # ---------------------------------------------------------------------------
     ax.axhline(0, color='lightgrey', linewidth=20, alpha=0.3, zorder=1)
-    ax.axvspan(319, 541, color='blue',   alpha=0.08, label='RBD Domain')
-    ax.axvspan(437, 508, color='cyan',   alpha=0.15, label='RBM Motif')
-    ax.axvspan(681, 685, color='purple', alpha=0.20, label='Furin Site')
+    ax.axvspan(RBD_RANGE[0], RBD_RANGE[1], color='blue',   alpha=0.08, label='RBD Domain')
+    ax.axvspan(RBM_RANGE[0], RBM_RANGE[1], color='cyan',   alpha=0.15, label='RBM Motif')
+    ax.axvspan(FURIN_RANGE[0], FURIN_RANGE[1], color='purple', alpha=0.20, label='Furin Site')
 
     # ---------------------------------------------------------------------------
     # X exclusion zones (faint orange background)
@@ -413,16 +432,14 @@ def generate_heatmap(df_reliable, df_suspect, x_positions,
                 fontsize=6.5, rotation=45, ha='left', color='grey', style='italic')
 
     # ---------------------------------------------------------------------------
-    # Prophet predictions (reliable positions only)
+    # Prophet predictions (§2.5.3: only clean-context positions)
     # ---------------------------------------------------------------------------
     if prophet_data:
-        reliable_positions = set(df_reliable['Pos'].dropna().astype(int).tolist())
-
         for target in prophet_data:
             pos = target['wuhan_position']
 
-            # Only draw if the position is in a reliable zone
-            if pos not in reliable_positions:
+            # Clean-context check AFTER localization (not mutation existence)
+            if not is_clean_context(pos, x_positions):
                 continue
 
             original = target['original_aa']
@@ -453,7 +470,7 @@ def generate_heatmap(df_reliable, df_suspect, x_positions,
     )
     ax.set_xlabel("Position in the Spike Protein (Residues)")
     ax.set_ylabel("Structural Impact (|LLR|)")
-    ax.set_xlim(0, 1273)
+    ax.set_xlim(0, SPIKE_LENGTH)
     ax.set_ylim(-1, upper_limit)
     ax.grid(axis='y', linestyle='--', alpha=0.5)
 
@@ -478,20 +495,17 @@ def generate_heatmap(df_reliable, df_suspect, x_positions,
 
     plt.tight_layout()
 
-    root_dir = Path(__file__).resolve().parent.parent
-    output_dir = root_dir / "output" / "s" / "report"
     filename = Path(csv_path).name
 
-    # Save
-    folder_path = "output/s/reports"
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     base_name = (filename
                  .replace('.csv', '')
                  .replace('report_', ''))
 
-    image_path = os.path.join(folder_path, f"heatmap_{base_name}.svg")
+    image_path = REPORTS_DIR / f"heatmap_{base_name}.svg"
 
     try:
-        plt.savefig(image_path, dpi=150)
+        plt.savefig(str(image_path), dpi=150)
         print(f"🎨 Heatmap generated: {image_path}")
     except OSError as e:
         print(f"❌ Error saving heatmap: {e}")
@@ -500,34 +514,25 @@ def generate_heatmap(df_reliable, df_suspect, x_positions,
 
 
 def generate_txt_report(df_reliable, df_suspect, df_invalid,
-                         score, lineage, lineage_prob, quality, csv_path, prophet_data):
+                         score, lineage, lineage_prob, quality, csv_path, prophet_data,
+                         x_positions=None):
     """Generates the .txt report with sections split by reliability tier."""
+    x_positions = x_positions or set()
 
-    root_dir = Path(__file__).resolve().parent.parent
-    output_dir = root_dir / "output" / "s" / "report"
     filename = Path(csv_path).name
 
-    # Save
-    folder_path = "output/s/report"
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
     base_name = (filename
                  .replace('.csv', '')
                  .replace('report_', ''))
 
-    report_path = f"output/s/reports/executive_report_{base_name}.txt"
+    report_path = REPORTS_DIR / f"executive_report_{base_name}.txt"
 
     # Top 3 threats (reliable only)
     top_threats = df_reliable.sort_values(by='Score', ascending=False).head(3)
 
-    # Verdict based on reliable data
-    if score > 1200:
-        verdict = "🔴 MAXIMUM ALERT"
-        risk_level = "CRITICAL"
-    elif score > 600:
-        verdict = "🟠 ACTIVE MONITORING"
-        risk_level = "HIGH"
-    else:
-        verdict = "🟡 OBSERVATION"
-        risk_level = "MODERATE"
+    # Verdict (§3.1 Table 2 tiers + §4.4: cutoffs heuristic, not ROC-calibrated).
+    verdict, risk_level = risk_tier(score)
 
     # Wuhan reference for sites of interest
     wuhan_ref_map = {
@@ -591,21 +596,20 @@ def generate_txt_report(df_reliable, df_suspect, df_invalid,
                         f"(NOT RELIABLE)\n")
             f.write("\n")
 
-        # --- Prophet evolutionary forecast ---
+        # --- Prophet evolutionary forecast (§2.5.2-2.5.3) ---
         if prophet_data:
-            reliable_positions = set(df_reliable['Pos'].dropna().astype(int).tolist())
-
             f.write("--- EVOLUTIONARY FORECAST (TELOS PROPHET) ---\n")
             f.write("  Structural stability analysis via AI (ESM-2).\n")
-            f.write("  Only predictions for reliable positions are included.\n\n")
+            f.write("  Only predictions with clean context (±5, no X) are included (§2.5.3).\n")
+            f.write("  Alert threshold τ=20% heuristic, not ROC-calibrated (§2.5.2, §4.4).\n\n")
 
             for target in prophet_data:
                 pos = target['wuhan_position']
                 name = target['target_site']
                 current = target['original_aa']
 
-                # Check whether the position is reliable
-                is_reliable = pos in reliable_positions
+                # Clean-context check AFTER localization (§2.5.3)
+                is_reliable = is_clean_context(pos, x_positions)
 
                 # Look it up in the reliable DataFrame
                 csv_match = df_reliable[
@@ -633,7 +637,7 @@ def generate_txt_report(df_reliable, df_suspect, df_invalid,
                     (p for p in target['predictions'] if p['amino'] != current), None
                 )
 
-                if best_mutation and best_mutation['confidence'] > 20:
+                if best_mutation and best_mutation['confidence'] > ALERT_THRESHOLD_PCT:
                     f.write(f"    [!] ALERT: Path toward {best_mutation['amino']} "
                             f"with {best_mutation['confidence']:.1f}% structural "
                             f"probability.\n")
@@ -662,12 +666,15 @@ def generate_txt_report(df_reliable, df_suspect, df_invalid,
 
 
 def generate_pdf_report(df_reliable, df_suspect, df_invalid,
-                         score, lineage, lineage_prob, quality, csv_path, prophet_data):
+                         score, lineage, lineage_prob, quality, csv_path, prophet_data,
+                         x_positions=None):
+    x_positions = x_positions or set()
 
     # --- File configuration ---
     base_name = Path(csv_path).name.replace('.csv', '').replace('report_', '')
-    pdf_path = f"output/s/reports/executive_report_{base_name}.pdf"
-    doc = SimpleDocTemplate(pdf_path, pagesize=A4, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    pdf_path = REPORTS_DIR / f"executive_report_{base_name}.pdf"
+    doc = SimpleDocTemplate(str(pdf_path), pagesize=A4, rightMargin=50, leftMargin=50, topMargin=50, bottomMargin=50)
 
     styles = getSampleStyleSheet()
     elements = []
@@ -684,12 +691,12 @@ def generate_pdf_report(df_reliable, df_suspect, df_invalid,
     elements.append(HRFlowable(width="100%", thickness=1, color=colors.black, spaceAfter=20))
 
     # --- 2. Summary box (verdict) ---
-    verdict_color = colors.orange if score > 600 else colors.green
-    if score > 1200: verdict_color = colors.red
+    verdict_color = colors.orange if score > SCORE_MID else colors.green
+    if score > SCORE_HIGH: verdict_color = colors.red
 
     summary_data = [
         ["AGGRESSION SCORE", f"{score:.1f}"],
-        ["VERDICT", "MAXIMUM ALERT" if score > 1200 else ("ACTIVE MONITORING" if score > 600 else "OBSERVATION")],
+        ["VERDICT", "MAXIMUM ALERT" if score > SCORE_HIGH else ("ACTIVE MONITORING" if score > SCORE_MID else "OBSERVATION")],
         ["PROBABLE LINEAGE", f"{lineage} ({lineage_prob:.1f}%)"],
         ["SEQUENCING QUALITY", f"{quality:.2f}%"],
         ["RELIABLE MUTATIONS", f"{len(df_reliable)}"],
@@ -708,11 +715,11 @@ def generate_pdf_report(df_reliable, df_suspect, df_invalid,
     elements.append(Spacer(1, 20))
 
     # 1. Color logic (using more professional tones)
-    if score > 1200:
+    if score > SCORE_HIGH:
         verdict = "🔴 MAXIMUM ALERT"
         risk_level = "CRITICAL"
         dynamic_color = colors.HexColor("#D32F2F")  # Deep Red
-    elif score > 600:
+    elif score > SCORE_MID:
         verdict = "🟠 ACTIVE MONITORING"
         risk_level = "HIGH"
         dynamic_color = colors.HexColor("#F57C00")  # Intense Orange
@@ -764,17 +771,15 @@ def generate_pdf_report(df_reliable, df_suspect, df_invalid,
     elements.append(Paragraph("EVOLUTIONARY FORECAST (TELOS PROPHET)", styles['Heading3']))
 
     if prophet_data:
-        reliable_positions = set(df_reliable['Pos'].dropna().astype(int).tolist())
-
         for target in (prophet_data or []):
-            # Check whether the position is reliable
+            # Clean-context check AFTER localization (§2.5.3)
             pos = target['wuhan_position']
-            is_reliable = pos in reliable_positions
+            is_reliable = is_clean_context(pos, x_positions)
 
             if is_reliable:
 
                 best = next((p for p in target['predictions'] if p['amino'] != target['original_aa']), None)
-                alert_color = "#D32F2F" if best and best['confidence'] > 20 else "#2E7D32"
+                alert_color = "#D32F2F" if best and best['confidence'] > ALERT_THRESHOLD_PCT else "#2E7D32"
 
                 text = f"<b>{target['target_site']}</b>: "
                 if best:

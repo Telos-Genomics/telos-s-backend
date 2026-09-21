@@ -2,12 +2,23 @@ import os
 import sys
 import math
 import torch
-from transformers import EsmTokenizer, EsmForMaskedLM
 import torch.nn.functional as F
 import json
 
+sys.path.insert(0, os.path.dirname(__file__))
+try:
+    from telos_config import (
+        CONTEXT_WINDOW, ESM_DEFAULT_MODEL, PROPHET_TARGETS, PROPHET_TOP_K, SPIKE_LENGTH,
+    )
+    from common import find_mask_index, load_esm, resolve_device
+except ImportError:
+    from modules.telos_config import (
+        CONTEXT_WINDOW, ESM_DEFAULT_MODEL, PROPHET_TARGETS, PROPHET_TOP_K, SPIKE_LENGTH,
+    )
+    from modules.common import find_mask_index, load_esm, resolve_device
+
 # ---------------------------------------------------------------------------
-# TELOS PROPHET: Spike Mutation Predictor using ESM-2
+# TELOS PROPHET: Spike Mutation Predictor using ESM-2 (§2.5)
 # ---------------------------------------------------------------------------
 # FIX v2: Replaced position search function with a direct mapping (Wuhan_pos -> Aligned_idx).
 # This ensures robustness against high mutation density in sequences like RE.2.2.3 by creating
@@ -17,28 +28,12 @@ import json
 
 
 def get_device():
-    """Detects and returns the best available computing device (CUDA, MPS, or CPU)."""
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-        print(f"🚀 Using CUDA: {torch.cuda.get_device_name(0)}")
-    elif torch.backends.mps.is_available():
-        device = torch.device("mps")
-        print("🍎 Using Metal Performance Shaders (MPS)")
-    else:
-        device = torch.device("cpu")
-        print("💻 Using CPU")
-    return device
-
-
-def find_mask_index(input_ids_cpu: torch.Tensor, mask_token_id: int) -> int | None:
-    """
-    Searches for the [MASK] token index within the input sequence tensor.
-    Avoids .nonzero(as_tuple=True) which can cause issues on MPS devices.
-    """
-    for idx in range(input_ids_cpu.shape[1]):
-        if input_ids_cpu[0, idx].item() == mask_token_id:
-            return idx
-    return None
+    """Legacy wrapper — use common.resolve_device()."""
+    try:
+        from common import get_device as _g
+    except ImportError:
+        from modules.common import get_device as _g
+    return _g()
 
 
 def build_wuhan_map(aligned_sequence: str) -> dict[int, int]:
@@ -77,10 +72,10 @@ def validate_alignment(aligned_sequence: str) -> tuple[bool, str]:
     Returns: (is_valid, error_message)
     """
     length = len(aligned_sequence)
-    if length != 1273:
+    if length != SPIKE_LENGTH:
         return False, (
             f"❌ Incorrect Length: {length} characters. "
-            f"Wuhan Spike is 1273 residues. Ensure sequence alignment against Wuhan is correct."
+            f"Wuhan Spike is {SPIKE_LENGTH} residues. Ensure sequence alignment against Wuhan is correct."
         )
     # NOTE: Detailed residue validation omitted as per logic preservation scope.
     return True, ""
@@ -98,36 +93,20 @@ def predict_mutations(spike_path: str, imputation_json_path: str, force_cpu: boo
     # ------------------------------------------------------------------
     # 1. Device Setup
     # ------------------------------------------------------------------
-    if force_cpu:
-        device = torch.device("cpu")
-        print("💻 CPU forced by user.")
-    else:
-        device = get_device()
+    device = resolve_device(force_cpu)
 
     # ------------------------------------------------------------------
-    # 2. Model Loading
+    # 2. Model Loading (shared helper)
     # ------------------------------------------------------------------
-    model_name = os.environ.get('ESM_2_SIZE', 'facebook/esm2_t33_650M_UR50D')
-    print(f"\n📥 Loading model {model_name}...")
-
-    tokenizer = EsmTokenizer.from_pretrained(model_name)
-    # Load with specific dtype for memory efficiency if possible
+    model_name = os.environ.get('ESM_2_SIZE', ESM_DEFAULT_MODEL)
     try:
-        model = EsmForMaskedLM.from_pretrained(model_name, torch_dtype=torch.float32)
+        tokenizer, model, device = load_esm(model_name, device)
     except Exception as e:
         print(f"⚠️ Error loading model type/dtype: {e}. Attempting standard load.")
+        from transformers import EsmForMaskedLM
         model = EsmForMaskedLM.from_pretrained(model_name)
-
-
-    try:
         model.to(device)
-        print(f"✅ Model loaded onto {device}")
-    except Exception as e:
-        print(f"⚠️ Error moving model to {device}: {e}. Falling back to CPU.")
-        device = torch.device("cpu")
-        model.to(device)
-
-    model.eval()
+        model.eval()
 
     # ------------------------------------------------------------------
     # 3. Read and Validate Sequence
@@ -157,14 +136,9 @@ def predict_mutations(spike_path: str, imputation_json_path: str, force_cpu: boo
     print(f"📊 Map built: {aa_non_gap} amino acid positions, {gaps_in_variant} gap positions (deletions)")
 
     # ------------------------------------------------------------------
-    # 5. Define Target Positions (Wuhan numbering)
+    # 5. Define Target Positions (Wuhan numbering, §2.5.2)
     # ------------------------------------------------------------------
-    target_sites = {
-        "RBM_452": 452,
-        "RBM_484": 484,
-        "RBM_501": 501,
-        "Furin_Cleavage_681": 681,
-    }
+    target_sites = dict(PROPHET_TARGETS)
 
     # ------------------------------------------------------------------
     # 6. Load Imputation Status
@@ -174,7 +148,12 @@ def predict_mutations(spike_path: str, imputation_json_path: str, force_cpu: boo
         with open(imputation_json_path, "r") as f:
             imputation_data = json.load(f)
             # Collect all indices that were filled by imputation for quick lookup
-            imputed_indices = {item['idx'] for item in imputation_data.get('positional_data', [])}
+            # Accept both 'idx' (canonical) and legacy 'index'.
+            imputed_indices = {
+                item.get('idx', item.get('index'))
+                for item in imputation_data.get('positional_data', [])
+                if item.get('idx', item.get('index')) is not None
+            }
         print(f"📋 Imputation status loaded: {len(imputed_indices)} positions covered by imputed data.")
     except Exception as e:
         print(f"⚠️ Could not load imputation JSON file ({e}). Proceeding without imputation filtering.")
@@ -209,19 +188,33 @@ def predict_mutations(spike_path: str, imputation_json_path: str, force_cpu: boo
             print(f"\n🟡 {site_name} (Wuhan {wuhan_pos}): GAP observed — Deletion confirmed.")
             continue
 
+        # Step C2: Clean-context exclusion (§2.5.3) — AFTER localization.
+        # If any residue within ±CONTEXT_WINDOW in the ALIGNED sequence is
+        # Invalid ('X'), the prediction is withheld entirely. Localization
+        # via wuhan_map above always proceeds independently of quality.
+        window_start = max(0, aligned_idx - CONTEXT_WINDOW)
+        window_end = min(len(seq_con_gaps), aligned_idx + CONTEXT_WINDOW + 1)
+        if 'X' in seq_con_gaps[window_start:window_end]:
+            print(f"\n⏩ {site_name} (Wuhan {wuhan_pos}): Skipping — 'X' within ±5 "
+                  f"(clean-context exclusion, §2.5.3).")
+            continue
+
         # Step D: Execute Model Prediction
         print(f"\n📍 Target Site: {site_name} (Wuhan {wuhan_pos})")
         print(f"    Observed Residue in Variant: {current_aa}")
         print(f"    Aligned Index: {aligned_idx}")
 
-        # Determine index in the gapless sequence (required for ESM input)
+        # Determine index in the gapless sequence (required for ESM input).
+        # ESM-2 never saw '-' during pretraining: inference MUST run on the
+        # gapless variant context, masking the clean index (§2.5.2).
+        clean_seq = seq_con_gaps.replace('-', '')
         clean_idx = sum(1 for char in seq_con_gaps[:aligned_idx] if char != '-')
 
-        # Prepare masked sequence input
-        seq_list = list(seq_con_gaps)
-        
+        # Prepare masked sequence input (gapless)
+        seq_list = list(clean_seq)
+
         # Set the target site to MASK (We must mask the position, regardless of whether it's mutated or identical)
-        seq_list[aligned_idx] = tokenizer.mask_token 
+        seq_list[clean_idx] = tokenizer.mask_token
         masked_input = "".join(seq_list)
 
 
@@ -241,14 +234,15 @@ def predict_mutations(spike_path: str, imputation_json_path: str, force_cpu: boo
             print(f"    ❌ Failed to locate [MASK] token in the input sequence.")
             continue
 
-        # Calculate probabilities for possible residues
+        # Calculate probabilities for possible residues (§2.5.2: full-vocab
+        # softmax, top-5 retained for reporting).
         logits_mask = logits_cpu[0, mask_idx, :]
         probabilities = F.softmax(logits_mask, dim=-1)
-        top_probs, top_indices = torch.topk(probabilities, 5)
+        top_probs, top_indices = torch.topk(probabilities, PROPHET_TOP_K)
 
         predicted_residues = []
-        print(f"    Model Predictions (Top 5):")
-        for i in range(5):
+        print(f"    Model Predictions (Top {PROPHET_TOP_K}):")
+        for i in range(PROPHET_TOP_K):
             token = tokenizer.decode(top_indices[i].item())
             prob = top_probs[i].item() * 100
             predicted_residues.append({"amino": token, "confidence": prob})
@@ -270,8 +264,12 @@ def predict_mutations(spike_path: str, imputation_json_path: str, force_cpu: boo
     # ------------------------------------------------------------------
     if mutation_predictions:
         base_name = os.path.basename(spike_path).replace('.txt', '').replace('spike_aligned/', '')
-        json_output_path = f"output/prophet/mutation_predictions_{base_name}.json"
-        os.makedirs("output/prophet", exist_ok=True)
+        try:
+            from telos_config import PROPHET_DIR
+        except ImportError:
+            from modules.telos_config import PROPHET_DIR
+        PROPHET_DIR.mkdir(parents=True, exist_ok=True)
+        json_output_path = PROPHET_DIR / f"mutation_predictions_{base_name}.json"
 
         with open(json_output_path, "w", encoding="utf-8") as f:
             json.dump(mutation_predictions, f, indent=4, ensure_ascii=False)

@@ -5,7 +5,14 @@ import csv
 import time
 import torch
 import torch.nn.functional as F
-from transformers import EsmTokenizer, EsmForMaskedLM
+
+sys.path.insert(0, os.path.dirname(__file__))
+try:
+    from telos_config import C1_ZONE, C2_LLR, DEFAULT_BATCH_SIZE, ESM_DEFAULT_MODEL, get_zone_weight
+    from common import find_mask_index, load_esm, resolve_device
+except ImportError:  # package-style import
+    from modules.telos_config import C1_ZONE, C2_LLR, DEFAULT_BATCH_SIZE, ESM_DEFAULT_MODEL, get_zone_weight
+    from modules.common import find_mask_index, load_esm, resolve_device
 
 # ---------------------------------------------------------------------------
 # DEVICE STRATEGY:
@@ -13,59 +20,29 @@ from transformers import EsmTokenizer, EsmForMaskedLM
 #   - Once logits are obtained, they are moved to CPU using .cpu(). All subsequent
 #     post-processing (nonzero, softmax, topk, log probability calculations) is done on CPU
 #     to avoid MPS trace traps related to advanced indexing/tensor operations.
+#   - Helpers live in common.py; wrappers below preserve the legacy import path.
 # ---------------------------------------------------------------------------
 
 def get_device() -> torch.device:
-    """Detects and returns the best available computing device (CUDA, MPS, or CPU)."""
-    if torch.cuda.is_available():
-        device = torch.device("cuda")
-        print(f"🚀 CUDA detected: {torch.cuda.get_device_name(0)}")
-    elif torch.backends.mps.is_available() and torch.backends.mps.is_built():
-        device = torch.device("mps")
-        print("🍎 MPS detected (Apple Silicon)")
-    else:
-        device = torch.device("cpu")
-        print("💻 Using CPU")
-    return device
+    """Legacy wrapper — use common.resolve_device()."""
+    from common import get_device as _get_device
+    try:
+        return _get_device()
+    except ImportError:
+        from modules.common import get_device as _get_device_pkg
+        return _get_device_pkg()
 
 
 def analyze_context(position: int) -> tuple[str, float]:
-    """
-    Analyzes the biological context of a residue based on its position.
-
-    Args:
-        position: The 1-indexed position in the sequence.
-
-    Returns:
-        A tuple containing (Context Label, Context Weight Multiplier).
-    """
-    if 437 <= position <= 508:
-        # Receptor Binding Motif (RBM) - Direct Contact
-        return "CRITICAL (RBM - Direct Contact)", 3.0
-    elif 319 <= position <= 541:
-        # Receptor Binding Domain (RBD)
-        return "HIGH (RBD - Binding Domain)", 2.0
-    elif 681 <= position <= 685:
-        # Furin Cleavage Site
-        return "MEDIUM (Furin Site)", 1.5
-    else:
-        # Structural Body
-        return "NORMAL (Structural Region)", 1.0
-
-
-def find_mask_index(input_ids_row: torch.Tensor, mask_token_id: int) -> int | None:
-    """Returns the index (int) of the [MASK] token in a single 1D row tensor."""
-    mask_positions = (input_ids_row == mask_token_id).nonzero(as_tuple=False)
-    if len(mask_positions) > 0:
-        return mask_positions[0][-1].item()
-    return None
+    """Zone classification §2.4.2 — delegates to telos_config.get_zone_weight."""
+    return get_zone_weight(position)
 
 
 def compare_with_intelligence(
     ref_path: str, 
     var_path: str, 
     force_cpu: bool = False, 
-    batch_size: int = 4
+    batch_size: int | None = None
 ):
     """
     Compares the variant sequence against the reference using ESM-2 model embeddings to assess mutation impact.
@@ -75,38 +52,23 @@ def compare_with_intelligence(
         var_path: Path to the variant sequence file.
         force_cpu: If True, forces CPU usage regardless of hardware availability.
         batch_size: Number of masked sequences to pass simultaneously through the model.
+            None → DEFAULT_BATCH_SIZE (8). Explicit 4 still honored for callers.
     """
+    if batch_size is None:
+        batch_size = DEFAULT_BATCH_SIZE
     # ------------------------------------------------------------------
     # 1. Device Setup
     # ------------------------------------------------------------------
-    if force_cpu:
-        device = torch.device("cpu")
-        print("💻 CPU forced by user.")
-    else:
-        device = get_device()
+    device = resolve_device(force_cpu)
 
     # ------------------------------------------------------------------
-    # 2. Model Loading
+    # 2. Model Loading (shared helper, same fallback to CPU)
     # ------------------------------------------------------------------
-    model_name = os.environ.get('ESM_2_SIZE', 'facebook/esm2_t33_650M_UR50D') # Fallback name
-    print(f"\n📥 Loading model {model_name}...")
-
+    model_name = os.environ.get('ESM_2_SIZE', ESM_DEFAULT_MODEL)
     try:
-        tokenizer = EsmTokenizer.from_pretrained(model_name)
-        model = EsmForMaskedLM.from_pretrained(model_name, torch_dtype=torch.float32)
-    except Exception as e:
-        print(f"❌ Error loading model components: {e}")
+        tokenizer, model, device = load_esm(model_name, device)
+    except Exception:
         sys.exit(1)
-
-    try:
-        model = model.to(device)
-        print(f"✅ Model loaded onto {device}")
-    except Exception as e:
-        print(f"⚠️ Failed to move model to designated device: {e}. Falling back to CPU.")
-        device = torch.device("cpu")
-        model.to(device)
-
-    model.eval()
 
     # ------------------------------------------------------------------
     # 3. Read Sequences
@@ -211,9 +173,12 @@ def compare_with_intelligence(
             model_suggestion = tokenizer.decode(top_idx[0].item())
             p_suggestion = top_prob[0].item()
 
-            # Scoring
+            # Scoring (§2.4.1: per-mutation term |c1·ω + c2·ζ|, c1=20, c2=10
+            # heuristic §4.4; abs applied at aggregation in final_analyzer).
+            # score_final/THREAT below is a legacy operational flag, NOT part
+            # of the paper — it only drives Status coloring, never the Score.
             score_final = (1 - abs(llr)) * context_weight
-            risk_score = (context_weight * 20) + (llr * 10)
+            risk_score = (context_weight * C1_ZONE) + (llr * C2_LLR)
 
             # Threat Assessment
             is_threat = score_final > 1.5 and llr > -0.5
@@ -263,13 +228,15 @@ def compare_with_intelligence(
 
 
 def save_csv_report(results: list[dict], filename: str):
-    """Saves the structured results dictionary to a CSV file."""
-    folder_path = "output/s/reports"
-    full_path = os.path.join(folder_path, filename)
+    """Saves the structured results dictionary to a CSV file (contract: output/s/reports/)."""
+    try:
+        from telos_config import REPORTS_DIR
+    except ImportError:
+        from modules.telos_config import REPORTS_DIR
+    REPORTS_DIR.mkdir(parents=True, exist_ok=True)
+    full_path = REPORTS_DIR / filename
 
     try:
-        os.makedirs(folder_path, exist_ok=True)
-
         fieldnames = [
             "Mutation", "Context", "LLR", "Status", "Score", 
             "Suggestion_AI", "P_Original", "P_Mutant"
@@ -286,6 +253,16 @@ def save_csv_report(results: list[dict], filename: str):
         print(f"❌ Error saving report file: {e}")
 
 
+def _parse_batch_size(argv: list[str]) -> int:
+    """CLI --batch-size N, default DEFAULT_BATCH_SIZE (same contract as before)."""
+    if "--batch-size" in argv:
+        try:
+            return int(argv[argv.index("--batch-size") + 1])
+        except (IndexError, ValueError):
+            print(f"⚠️ Invalid batch size provided. Falling back to default ({DEFAULT_BATCH_SIZE}).")
+    return DEFAULT_BATCH_SIZE
+
+
 if __name__ == "__main__":
     if len(sys.argv) < 3:
         print("Usage:")
@@ -295,14 +272,6 @@ if __name__ == "__main__":
         sys.exit(1)
 
     force_cpu = "--cpu" in sys.argv
-    
-    # Parse batch size option if passed via CLI, else default to 8
-    batch_size = 8
-    if "--batch-size" in sys.argv:
-        try:
-            bs_idx = sys.argv.index("--batch-size") + 1
-            batch_size = int(sys.argv[bs_idx])
-        except (IndexError, ValueError):
-            print("⚠️ Invalid batch size provided. Falling back to default (8).")
+    batch_size = _parse_batch_size(sys.argv)
 
     compare_with_intelligence(sys.argv[1], sys.argv[2], force_cpu=force_cpu, batch_size=batch_size)

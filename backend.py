@@ -17,7 +17,13 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from pathlib import Path
+import sys
 import subprocess
+sys.path.insert(0, str(Path(__file__).parent / 'modules'))
+try:
+    from telos_config import DEFAULT_BATCH_SIZE, STEP_TIMEOUT_S
+except ImportError:
+    from modules.telos_config import DEFAULT_BATCH_SIZE, STEP_TIMEOUT_S
 import json
 import uuid
 import shutil
@@ -182,7 +188,7 @@ def run_pipeline_step(command: List[str], step_name: str) -> dict:
             cwd=BASE_DIR,
             capture_output=True,
             text=True,
-            timeout=1200  # 10 minute max per step
+            timeout=STEP_TIMEOUT_S  # 20 min per step (telos_config)
         )
 
         return {
@@ -210,9 +216,15 @@ def run_pipeline_step(command: List[str], step_name: str) -> dict:
 
 def calculate_epi_parameters(results_csv: Path) -> dict:
     """
-    Computes epidemiological parameters from the mutations CSV.
+    Computes EXPLORATORY epidemiological parameters from the mutations CSV.
 
     This is the "bridge" between Telos-S and Telos-SIM.
+
+    NOTE (§4.5): Telos-SIM is an exploratory extension, NOT empirically
+    validated against epidemiological data and excluded from paper results.
+    R0/incubation/transmissibility formulas below are heuristic MVP
+    placeholders (Wuhan baselines R0=2.5, incub=5.5d, transm=0.10),
+    not calibrated predictors. Consumers must label them exploratory.
     """
     import pandas as pd
 
@@ -317,7 +329,7 @@ def run_analysis_pipeline(
         reference_name = reference_fasta_path.stem
 
         cpu_flag = ["--cpu"] if use_cpu else []
-        batch_size_value = os.environ.get('BATCH_SIZE', '4')
+        batch_size_value = os.environ.get('BATCH_SIZE', str(DEFAULT_BATCH_SIZE))
         batch_flag = ["--batch-size", batch_size_value]
 
         # ====================================================================
@@ -359,7 +371,13 @@ def run_analysis_pipeline(
             raise Exception(f"Alignment failed: {result['stderr']}")
 
         # ====================================================================
-        # STEP 3: Imputation (optional)
+        # STEP 3: Imputation (optional, NOT part of the paper §§2.2-2.5)
+        # Reference-based mirroring of large X blocks (>=5). Imputed sites
+        # are recorded in imputation_*.json and MUST be excluded from scoring
+        # (Prophet skips them; final_analyzer excludes their ±5 context).
+        # File contract (must match impute_sequence.py):
+        #   seq: output/s/spike_aligned/<base>_imputed.txt
+        #   meta: output/prophet/imputation_<base>.json
         # ====================================================================
         aligned_ref = OUTPUT_DIR / "s" / "spike_aligned" / f"spike_{reference_name}.txt"
         aligned_var = OUTPUT_DIR / "s" / "spike_aligned" / f"spike_{variant_name}.txt"
@@ -376,9 +394,6 @@ def run_analysis_pipeline(
             if not result["success"]:
                 # Not critical if it fails - continue with the original sequence
                 print(f"Warning: Imputation failed, continuing without imputation")
-            else:
-                # If imputation succeeded, use the imputed sequence
-                imputed_var = OUTPUT_DIR / "s" / "spike_aligned" / f"spike_{variant_name}_imputada.txt"
 
         # ====================================================================
         # STEP 4: Oracle (Prophet predictions)
@@ -386,7 +401,9 @@ def run_analysis_pipeline(
         status["current_step"] = "Predicting critical mutations (Prophet)"
         status["progress"] = 0.67
         save_job_status(job_id, status)
-        imputed_json = OUTPUT_DIR / "prophet" / f"imputacion_spike_{variant_name}.json"
+        # Must match impute_sequence.py: output/prophet/imputation_<base>.json
+        # where <base> = spike_<variant_name>
+        imputed_json = OUTPUT_DIR / "prophet" / f"imputation_spike_{variant_name}.json"
 
         result = run_pipeline_step(
             ["python3", "modules/mutations_oracle.py", str(aligned_var), str(imputed_json)] + cpu_flag,
@@ -454,7 +471,7 @@ def run_analysis_pipeline(
 
 
         # Inside the logic that builds the final JSON
-        base_url = os.getenv("PUBLIC_URL", f"http://localhost:{os.environ['API_PORT']}")  # This can come from a .env
+        base_url = os.getenv("PUBLIC_URL", f"http://localhost:{os.getenv('API_PORT', '8000')}")  # This can come from a .env
         heatmap_rel_path = f"/output/s/reports/heatmap_spike_{variant_name}.svg"
         report_csv_rel_path = f"/output/s/reports/report_spike_{variant_name}.csv"
         report_txt_rel_path = f"/output/s/reports/executive_report_spike_{variant_name}.txt"
@@ -468,8 +485,9 @@ def run_analysis_pipeline(
             "lineage_confidence": lineage_conf,
             # Promoted to root level for direct access -- also exists in epi_params
             "aggression_score": epi_params.get("aggression_score", 0.0),
+            # §2.2 Qr = Trusted / total (SUSPECT excluded from numerator)
             "sequence_quality": round(
-                (1 - df_results[df_results["Reliability"] == "INVALID"].shape[0]
+                (df_results[df_results["Reliability"] == "RELIABLE"].shape[0]
                  / max(df_results.shape[0], 1)) * 100, 1
             ),
             "mutations": df_results.to_dict(orient="records"),
@@ -662,7 +680,7 @@ if __name__ == "__main__":
 
     uvicorn.run(
         "backend:app",
-        host=os.environ['API_HOST'],
-        port=int(os.environ['API_PORT']),
+        host=os.getenv('API_HOST', '0.0.0.0'),
+        port=int(os.getenv('API_PORT', '8000')),
         reload=True  # Auto-reload during development
     )

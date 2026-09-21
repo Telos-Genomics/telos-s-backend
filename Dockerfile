@@ -33,8 +33,9 @@ WORKDIR /app
 # We first copy the requirements file to take advantage of Docker's caching mechanism.
 # ---------------------------------------------------------------------------
 COPY requirements.txt .
- 
-RUN pip install --no-cache-dir -r requirements.txt
+
+RUN pip install --no-cache-dir --upgrade pip \
+    && pip install --no-cache-dir --prefer-binary -r requirements.txt
  
 # ---------------------------------------------------------------------------
 # Application code
@@ -55,8 +56,8 @@ ENV TELOS_FORCE_CPU=true
 ENV ESM_2_SIZE=facebook/esm2_t33_650M_UR50D
 ENV BATCH_SIZE=16
  
-# Exposed port
-EXPOSE 6002
+# Exposed port (container-internal; host mapping is 6002:8000 in compose)
+EXPOSE 8000
  
 # ---------------------------------------------------------------------------
 # Entrypoint

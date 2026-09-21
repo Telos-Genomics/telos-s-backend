@@ -1,14 +1,17 @@
 import os
 import sys
+from pathlib import Path
 from Bio import SeqIO
+
+sys.path.insert(0, os.path.dirname(__file__))
+try:
+    from telos_config import AMINO_ACID_TOLERANCE, EXPECTED_SPIKE_LENGTH_AA, MIN_GENOME_LENGTH, SPIKE_DIR, WUHAN_SPIKE_RANGE
+except ImportError:
+    from modules.telos_config import AMINO_ACID_TOLERANCE, EXPECTED_SPIKE_LENGTH_AA, MIN_GENOME_LENGTH, SPIKE_DIR, WUHAN_SPIKE_RANGE
 from Bio.Seq import Seq
 import json # Import json here since it's used in the function body
 
-# Validation constants (Converted to English and Pythonic naming)
-EXPECTED_SPIKE_LENGTH_AA = 1273  # Wuhan Spike length
-AMINO_ACID_TOLERANCE = 10        # +/- 10 aa tolerance (small indels)
-MIN_GENOME_LENGTH = 25000         # Full SARS-CoV-2 genome is ~30kb
-WUHAN_SPIKE_RANGE = (21563, 25384)  # Positions in NC_045512.2
+# Validation constants live in telos_config.py (single source of truth).
 
 def process_reference(fasta_file):
     """
@@ -230,20 +233,19 @@ def process_reference(fasta_file):
     # ---------------------------------------------------------------------------
     # 8. Save results
     # ---------------------------------------------------------------------------
-    output_folder = "output/s/spike"
     base_name = os.path.basename(fasta_file).replace('.fasta', '').replace('.fa', '')
-    protein_file_path = os.path.join(output_folder, f"spike_{base_name}.txt")
+    SPIKE_DIR.mkdir(parents=True, exist_ok=True)
+    protein_file_path = SPIKE_DIR / f"spike_{base_name}.txt"
 
     try:
-        os.makedirs(output_folder, exist_ok=True)
 
         with open(protein_file_path, "w", encoding="utf-8") as f:
             f.write(str(protein_sequence))
 
         print(f"\n✅ Protein saved to: {protein_file_path}")
 
-        # Save metadata
-        metadata_path = protein_file_path.replace(".txt", "_metadata.json")
+        # Save metadata (Path.with_name: Path.replace() targets, not str.replace())
+        metadata_path = protein_file_path.with_name(protein_file_path.stem + "_metadata.json")
 
         metadata = {
             "source_file": fasta_file,
