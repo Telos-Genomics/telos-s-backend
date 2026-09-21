@@ -271,3 +271,10 @@ The percentage indicates what fraction of the lineage signatures are present:
 - Science 379.6637 (2023): 1123-1130
 
 ---
+
+## 🔬 Evaluation Track (Fase A)
+
+Prospective validation lives in `eval/` (see `eval/README.md`): sealed
+prediction registry, curated retrospective set, GPU-free calibration
+scaffold and symmetric benchmark protocol. It only reads pipeline
+outputs — no scoring logic changes.
