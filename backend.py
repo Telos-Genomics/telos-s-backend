@@ -149,6 +149,35 @@ class SimulationRequest(BaseModel):
         }
 
 
+class SealRequest(BaseModel):
+    """Request to seal an exposure-monitoring recommendation (W3 registry)"""
+    job_id: str = Field(..., description="ID of the completed variant analysis")
+    recommended_action: str = Field(
+        ..., description="Decision output: 'no_action', 'monitor', 'alert' or 'human_review'"
+    )
+    action_confidence: Optional[float] = Field(None, description="Choice confidence (0-1)")
+    seal_noul: Optional[float] = Field(None, description="seal_and_notify noul (0-1)")
+    sufficiency_noul: Optional[float] = Field(None, description="evidence_sufficient noul (0-1)")
+    nimble_model: Optional[str] = Field(None, description="Decision model id, e.g. 'nimble:latest'")
+    prospect: Optional[str] = Field(None, description="Reinsurer / portfolio context")
+    exposure_context: Optional[str] = Field(None, description="Exposure notes (regions, lines, timelines)")
+    notes: Optional[str] = Field(None, description="Free-form sealing notes")
+
+    class Config:
+        schema_extra = {
+            "example": {
+                "job_id": "job_3a5f27de3410",
+                "recommended_action": "alert",
+                "action_confidence": 0.837,
+                "seal_noul": 0.973,
+                "sufficiency_noul": 0.942,
+                "nimble_model": "nimble:latest",
+                "prospect": "L&H reinsurer with excess-mortality owner",
+                "notes": "First prospective seal"
+            }
+        }
+
+
 # ============================================================================
 # UTILITIES
 # ============================================================================
@@ -529,7 +558,8 @@ async def root():
         "docs": "/docs",
         "endpoints": {
             "analysis": "/api/v1/analysis",
-            "simulation": "/api/v1/simulation"
+            "simulation": "/api/v1/simulation",
+            "registry": "/api/v1/registry"
         }
     }
 
@@ -669,6 +699,83 @@ async def run_simulation(request: SimulationRequest):
         "epi_params": epi_params,
         "message": "Full simulation will be implemented in Phase 2. Parameters available for visualization."
     }
+
+
+def _load_registry():
+    """Import the decision seal registry (modules/ first, package fallback)."""
+    try:
+        import decision_registry as registry
+    except ImportError:
+        from modules import decision_registry as registry
+    return registry
+
+
+@app.post("/api/v1/registry/seal", status_code=201)
+async def seal_recommendation(request: SealRequest):
+    """
+    Seals an exposure-monitoring recommendation in the W3 prospective registry.
+
+    The seal carries a server-generated UTC timestamp plus hashes of the
+    evidence and pipeline config, recorded BEFORE the outcome is observed.
+    The timestamp and hashes are generated here, never accepted from the
+    caller. Sealing is explicit: the decide tool only recommends.
+    """
+    registry = _load_registry()
+    status = load_job_status(request.job_id)
+
+    if status["status"] != "completed":
+        raise HTTPException(status_code=400, detail="The analysis must be completed first")
+
+    results = status.get("results", {})
+    evidence = {
+        "variant_name": results.get("variant_name", "Unknown"),
+        "aggression_score": results.get("aggression_score", 0.0),
+        "lineage": results.get("lineage", "Unknown"),
+        "lineage_confidence": results.get("lineage_confidence", 0),
+        "sequence_quality": results.get("sequence_quality", 0),
+    }
+    nimble = {
+        "model": request.nimble_model,
+        "recommended_action": request.recommended_action,
+        "action_confidence": request.action_confidence,
+        "seal_noul": request.seal_noul,
+        "sufficiency_noul": request.sufficiency_noul,
+    }
+    try:
+        entry = registry.seal(
+            job_id=request.job_id,
+            recommended_action=request.recommended_action,
+            evidence=evidence,
+            nimble=nimble,
+            prospect=request.prospect,
+            exposure_context=request.exposure_context,
+            notes=request.notes,
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=422, detail=str(e))
+    return entry
+
+
+@app.get("/api/v1/registry/seals")
+async def list_seals(job_id: Optional[str] = Query(None, description="Filter by analysis job ID")):
+    """
+    Lists decision seals, newest last. Optional job_id filter.
+    """
+    registry = _load_registry()
+    entries = registry.list_entries()
+    if job_id:
+        entries = [e for e in entries if e.get("job_id") == job_id]
+    return {"seals": entries, "count": len(entries)}
+
+
+@app.get("/api/v1/registry/verify")
+async def verify_registry():
+    """
+    Recomputes input hashes and the prev_hash chain over the whole registry.
+    Returns ok=true when the chain is intact, with any failures listed.
+    """
+    registry = _load_registry()
+    return registry.verify()
 
 
 # ============================================================================

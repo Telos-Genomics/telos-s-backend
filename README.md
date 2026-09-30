@@ -278,3 +278,25 @@ Prospective validation lives in `eval/` (see `eval/README.md`): sealed
 prediction registry, curated retrospective set, GPU-free calibration
 scaffold and symmetric benchmark protocol. It only reads pipeline
 outputs — no scoring logic changes.
+
+---
+
+## ⛓️ Decision Seal Registry (W3 prospective watchlist)
+
+Recommendations from the decision layer (MCP `decide_reinsurer_action`)
+become auditable through explicit seals. The decide tool only recommends;
+sealing records the recommendation with a server-generated UTC timestamp
+BEFORE the outcome is observed. Interactive docs: `/docs`.
+
+| Endpoint                         | Description                                                        |
+| -------------------------------- | ------------------------------------------------------------------ |
+| `POST /api/v1/registry/seal`     | Seal a recommendation for a completed `job_id` (status `201`)      |
+| `GET /api/v1/registry/seals`     | List seals, newest last (`?job_id=` filters by analysis)           |
+| `GET /api/v1/registry/verify`    | Recompute input hashes + `prev_hash` chain (`ok: true` when intact) |
+
+Each seal stores `sealed_at`, `recommended_action`, the evidence snapshot
+(score, lineage, quality), the Nimble answers, `config_hash` (frozen
+`telos_config` constants, shared machinery with `eval/eval_harness.py`),
+`input_hash`, and `prev_hash` (tamper-evident chain). Storage is JSONL at
+`output/registry/decision_seals.jsonl` (shared volume, append-only —
+the code has no update/delete path).
