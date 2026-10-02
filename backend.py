@@ -162,6 +162,7 @@ class SealRequest(BaseModel):
     prospect: Optional[str] = Field(None, description="Reinsurer / portfolio context")
     exposure_context: Optional[str] = Field(None, description="Exposure notes (regions, lines, timelines)")
     notes: Optional[str] = Field(None, description="Free-form sealing notes")
+    force: bool = Field(False, description="Allow a duplicate seal for a job_id that already has one")
 
     class Config:
         schema_extra = {
@@ -719,12 +720,24 @@ async def seal_recommendation(request: SealRequest):
     evidence and pipeline config, recorded BEFORE the outcome is observed.
     The timestamp and hashes are generated here, never accepted from the
     caller. Sealing is explicit: the decide tool only recommends.
+    Duplicate seals for the same job_id are rejected with 409 unless
+    force=true.
     """
     registry = _load_registry()
     status = load_job_status(request.job_id)
 
     if status["status"] != "completed":
         raise HTTPException(status_code=400, detail="The analysis must be completed first")
+
+    existing = registry.find_by_job(request.job_id)
+    if existing and not request.force:
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "message": "Job already sealed. Repeat with force=true to seal again.",
+                "seals": existing,
+            },
+        )
 
     results = status.get("results", {})
     evidence = {
